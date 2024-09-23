@@ -32,17 +32,18 @@ It has the following features:
 
 6. Program-friendly: The program calls the loading method at the start of the game, uses the automatically generated C# code to find data, and also provides a variety of search methods.
 
-————————————————————————————
+——————————————————————————————————————
 
 最佳实践：
 
 待补充。
 
+
 Best Practices:
 
 To be supplemented.
 
-——————————————————————————————
+——————————————————————————————————————
 
 提示：
 
@@ -55,6 +56,7 @@ To be supplemented.
 3.需要自定义数据结构。
 
 4.需要检查数据引用。
+
 
 Tips:
 
