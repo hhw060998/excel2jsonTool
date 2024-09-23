@@ -28,9 +28,9 @@ It has the following features:
 
 4. Runtime efficiency: A dictionary is used to store deserialized data, and the search efficiency is O(1).
 
-5. Planning-friendly: Planning is only for Excel, including adding, deleting and modifying files, fields and data, and there is no need to care about how the program is used. In addition, both int and string can be used as primary keys, and strings will be converted to enum types when exported.
+5. Designer-friendly: Planning is only for Excel, including adding, deleting and modifying files, fields and data, and there is no need to care about how the program is used. In addition, both int and string can be used as primary keys, and strings will be converted to enum types when exported.
 
-6. Program-friendly: The program calls the loading method at the start of the game, uses the automatically generated C# code to find data, and also provides a variety of search methods.
+6. Programmer-friendly: The program calls the loading method at the start of the game, uses the automatically generated C# code to find data, and also provides a variety of search methods.
 
 ——————————————————————————————————————
 
