@@ -37,7 +37,7 @@ USING_NAMESPACE_STR = "\n".join([
 ])
 
 CONFIG_DATA_ATTRIBUTE_STR = "[ConfigData]"
-PUBLIC_PROPERTY_STR = "public {0} {1} {{ get; set; }}"
+PUBLIC_PROPERTY_STR = "/// <summary> {0} </summary>\npublic {1} {2} {{ get; set; }}"
 PRIVATE_STATIC_FIELD_STR = "private static {0} {1};"
 NAMESPACE_WRAPPER_STR = "namespace Data.TableScript\n{{\n{0}\n}}"
 namespace = "ConfigDataName"
@@ -63,9 +63,9 @@ def wrap_class_str(class_name, class_content_str, interface_name="", indent_leve
     return f"public class {class_name}{interface_part}\n{{\n{indented_content}\n}}"
 
 
-def generate_script_file(sheet_name, properties_dict, output_folder, need_generate_keys=False, file_suffix="Data"):
+def generate_script_file(sheet_name, properties_dict, property_remarks, output_folder, need_generate_keys=False, file_suffix="Data"):
     # 通用文件生成流程
-    info_class = f"{auto_generated_summary_string}\n{generate_info_class(sheet_name, properties_dict)}"
+    info_class = f"{auto_generated_summary_string}\n{generate_info_class(sheet_name, properties_dict, property_remarks)}"
     data_class = f"{CONFIG_DATA_ATTRIBUTE_STR}\n{generate_data_class(sheet_name, need_generate_keys)}"
     file_content = f"{info_class}\n\n{data_class}"
     final_file_content = USING_NAMESPACE_STR + NAMESPACE_WRAPPER_STR.format(add_indentation(file_content))
@@ -74,9 +74,15 @@ def generate_script_file(sheet_name, properties_dict, output_folder, need_genera
     write_to_file(final_file_content, cs_file_path)
 
 
-def generate_info_class(class_name, properties_dict):
-    converted_properties = "\n".join([PUBLIC_PROPERTY_STR.format(convert_type_to_csharp(data_type), data_name)
-                                      for data_name, data_type in properties_dict.items()])
+def generate_info_class(class_name, properties_dict, property_remarks):
+    def format_property_remark(remark):
+        str_text = "\n".join([f"/// {line}" for line in remark.splitlines()])
+        return f"/// <summary>\n{str_text}\n/// </summary>"
+
+    converted_properties = "\n\n".join([
+        f"{format_property_remark(property_remarks[key])}\npublic {convert_type_to_csharp(value)} {key} {{ get; set; }}"
+        for key, value in properties_dict.items()
+    ])
     return wrap_class_str(class_name + "Info", converted_properties)
 
 
@@ -107,7 +113,7 @@ def generate_data_class(sheet_name, need_generate_keys):
             f"public static {sheet_name}Info GetDataByKey(string {key_str_param})\n{{\n"
             f"\tif(Enum.TryParse<{key_name}>({key_str_param}, out var {key_enum_param}))\n\t{{\n"
             f"\t\treturn GetDataById((int){key_enum_param});\n\t}}\n"
-            f"\tthrow new InvalidOperationException();\n}}"
+            f"\tthrow new InvalidOperationException();\n}}\n\n"
         )
 
     select_value_collection_method = (
@@ -121,7 +127,7 @@ def generate_data_class(sheet_name, need_generate_keys):
     )
 
     return wrap_class_str(f"{class_name}",
-                          f"{data_property}\n\n{init_method}\n\n{get_method}\n\n{get_method_with_key}\n\n{select_value_collection_method}\n\n{get_info_collection_method}")
+                          f"{data_property}\n\n{init_method}\n\n{get_method}\n\n{get_method_with_key}{select_value_collection_method}\n\n{get_info_collection_method}")
 
 
 created_files = []
