@@ -26,6 +26,7 @@ def batch_excel_to_json(source_folder):
     print(f"Excel目录:{source_folder}")
 
     file_count = 0
+    file_sheet_map = {}
     for folder_name, subfolders, filenames in os.walk(source_folder):
         for filename in filenames:
             if filename.endswith('.xlsx') and filename[0].isupper():
@@ -33,6 +34,15 @@ def batch_excel_to_json(source_folder):
                 print("——————————————————————————————————————————————————")
                 print(f"即将开始处理文件{folder_name}\\{GREEN}{filename}{RESET}")
                 wb = openpyxl.load_workbook(str(excel_file), data_only=True)
+
+                # 如果worksheet的名字已经被导出过了（在file_sheet_map中），则中断导表并打印错误信息：与xx文件名的sheet重名
+                if wb.worksheets[0].title in file_sheet_map.values():
+                    # 获取已经导出且sheet名重复的文件名
+                    for key, value in file_sheet_map.items():
+                        if value == wb.worksheets[0].title:
+                            print_red(f"存在与[{key}]中相同名称的sheet[{wb.worksheets[0].title}]，无法重复生成，退出导表")
+                            sys.exit()
+
                 main_sheet_data = WorksheetData(wb.worksheets[0])
                 main_sheet_data.generate_json(output_project_folder)
                 main_sheet_data.generate_json(output_client_folder)
@@ -45,6 +55,7 @@ def batch_excel_to_json(source_folder):
                             generate_enum_file_from_sheet(sheet, enum_tag, enum_output_folder)
 
                 file_count += 1
+                file_sheet_map[filename] = wb.worksheets[0].title
 
     print("——————————————————————————————————————————————————")
 
