@@ -37,7 +37,6 @@ USING_NAMESPACE_STR = "\n".join([
 ])
 
 CONFIG_DATA_ATTRIBUTE_STR = "[ConfigData]"
-PUBLIC_PROPERTY_STR = "/// <summary> {0} </summary>\npublic {1} {2} {{ get; set; }}"
 PRIVATE_STATIC_FIELD_STR = "private static {0} {1};"
 NAMESPACE_WRAPPER_STR = "namespace Data.TableScript\n{{\n{0}\n}}"
 namespace = "ConfigDataName"
