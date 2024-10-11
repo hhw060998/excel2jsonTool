@@ -35,6 +35,27 @@ It has the following features:
 
 ——————————————————————————————————————
 
+设计思路及使用说明：
+
+https://www.bilibili.com/video/BV1rz4CeJEF5
+
+1.首次使用需要配置python环境，并在ExcelFolder/!【导表】.bat 中配置Excel目录（即导入目录）、工具目录和各种导出目录。
+
+2.创建格式正确的Excel文件，参考ExcelFolder/SL示例.xlsx，文件名需要大写，Sheet名要符合c#类的命名规范（建议使用驼峰式）。
+
+3.运行ExcelFolder/!【导表】.bat 批处理脚本后，会将该Excel中的数据导出到指定json和c#脚本目录下。
+
+
+Design Concept and Usage Instructions:
+
+For the first-time use, you need to configure the Python environment and set up the Excel directory (i.e., the import directory), tool directory, and export directories in the ExcelFolder/!【导表】.bat file.
+
+Create a properly formatted Excel file, referencing the ExcelFolder/SL示例.xlsx example. The file name needs to be in uppercase, and the sheet name should conform to C# class naming conventions (camelCase is recommended).
+
+After running the ExcelFolder/!【导表】.bat batch script, the data from the Excel file will be exported to the specified JSON and C# script directories.
+
+——————————————————————————————————————
+
 最佳实践：
 
 待补充。
