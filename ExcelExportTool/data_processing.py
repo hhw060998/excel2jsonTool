@@ -51,7 +51,7 @@ def convert_to_complex_type(type_str, value):
 
     return value
 
-
+# 处理字典类型
 def process_dict_type(type_str, value):
     dict_data = {}
     type_match = re.search(r'\((.*)\)', type_str)
@@ -68,7 +68,7 @@ def process_dict_type(type_str, value):
 
     return dict_data
 
-
+# 处理列表类型
 def process_list_type(type_str, value):
     list_data = []
     type_match = re.search(r'\((.*)\)', type_str)
