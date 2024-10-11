@@ -6,12 +6,14 @@ def get_formatted_summary_string(origin_str):
 
 auto_generated_summary_string = get_formatted_summary_string("This is auto-generated, don't modify manually")
 
+enum_namespace = "ConfigDataName"
+
 def generate_enum_file_from_sheet(sheet, enum_tag, output_folder):
     enum_type_name = sheet.title.replace(enum_tag, "")
     enum_rows = sheet.iter_rows(min_row=2)
     enum_names, enum_values, remarks = zip(
         *[(row[0].value, row[1].value, row[2].value) for row in enum_rows])
-    generate_enum_file(enum_type_name, enum_names, enum_values, remarks, namespace, output_folder)
+    generate_enum_file(enum_type_name, enum_names, enum_values, remarks, enum_namespace, output_folder)
 
 
 def generate_enum_file(enum_type_name, enum_names, enum_values, remarks, name_space, output_folder):
@@ -39,8 +41,6 @@ USING_NAMESPACE_STR = "\n".join([
 CONFIG_DATA_ATTRIBUTE_STR = "[ConfigData]"
 PRIVATE_STATIC_FIELD_STR = "private static {0} {1};"
 NAMESPACE_WRAPPER_STR = "namespace Data.TableScript\n{{\n{0}\n}}"
-namespace = "ConfigDataName"
-
 
 # 提取缩进级别可配置
 def add_indentation(input_str, indent="\t"):
