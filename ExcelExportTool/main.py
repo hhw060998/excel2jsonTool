@@ -1,3 +1,8 @@
+# Author: huhongwei 306463233@qq.com
+# Created: 2024-09-10
+# MIT License 
+# All rights reserved
+
 import os
 import sys
 import time
