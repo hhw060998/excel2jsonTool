@@ -10,26 +10,26 @@ from data_processing import convert_to_type, available_csharp_enum_name
 import sys
 import json
 
+import json
+
 class WorksheetData:
     def __init__(self, worksheet):
         self.name = worksheet.title
         self.worksheet = worksheet
-        self.remarks = read_cell_values(worksheet, 1)
-        self.headers = read_cell_values(worksheet, 2)
-        self.data_types = read_cell_values(worksheet, 3)
-        self.data_labels = read_cell_values(worksheet, 4)
-        self.field_names = read_cell_values(worksheet, 5)
-        self.default_values = read_cell_values(worksheet, 6)
-        self.row_data = self.row_data = list(worksheet.iter_rows(min_row=7, min_col=2))
+        self.cell_values = {i: read_cell_values(worksheet, i) for i in range(1, 7)}
+        self.remarks = self.cell_values[1]
+        self.headers = self.cell_values[2]
+        self.data_types = self.cell_values[3]
+        self.data_labels = self.cell_values[4]
+        self.field_names = self.cell_values[5]
+        self.default_values = self.cell_values[6]
+        self.row_data = list(worksheet.iter_rows(min_row=7, min_col=2))
         check_repeating_values(self.field_names)
         self.need_generate_keys = self.__need_generate_keys()
 
     def __need_generate_keys(self):
         property_types = self.__get_properties_dict()
-
-        if list(property_types.values())[0] == "string":
-            return True
-        return False
+        return list(property_types.values())[0] == "string"
 
     @staticmethod
     def __convert_to_csharp_type(type_str):
@@ -39,22 +39,18 @@ class WorksheetData:
         return type_str.replace('(', '<').replace(')', '>')
 
     def __get_properties_dict(self):
-        properties_dict = {}
-        for index, field_name in enumerate(self.field_names):
-            if self.data_labels[index] == "ignore":
-                continue
-            if index > 0:
-                properties_dict[field_name] = self.__convert_to_csharp_type(self.data_types[index])
-        return properties_dict
+        return {
+            field_name: self.__convert_to_csharp_type(self.data_types[index])
+            for index, field_name in enumerate(self.field_names)
+            if self.data_labels[index] != "ignore" and index > 0
+        }
 
     def __get_property_remarks(self):
-        property_remarks = {}
-        for index, field_name in enumerate(self.field_names):
-            if self.data_labels[index] == "ignore":
-                continue
-            if index > 0:
-                property_remarks[field_name] = f"{self.headers[index]}: {self.remarks[index]}" if self.remarks[index] else self.headers[index]
-        return property_remarks
+        return {
+            field_name: f"{self.headers[index]}: {self.remarks[index]}" if self.remarks[index] else self.headers[index]
+            for index, field_name in enumerate(self.field_names)
+            if self.data_labels[index] != "ignore" and index > 0
+        }
 
     def __generate_enum_keys_csfile(self, output_folder):
         enum_type_name = f"{self.name}Keys"
