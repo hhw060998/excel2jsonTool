@@ -1,3 +1,9 @@
+# Author: huhongwei 306463233@qq.com
+# Created: 2024-09-10
+# MIT License 
+# All rights reserved
+
+
 from cs_generation import generate_script_file, generate_enum_file, write_to_file
 from excel_processing import read_cell_values, check_repeating_values
 from data_processing import convert_to_type, available_csharp_enum_name

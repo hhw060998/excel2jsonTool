@@ -1,5 +1,9 @@
-import os
+# Author: huhongwei 306463233@qq.com
+# Created: 2024-09-10
+# MIT License 
+# All rights reserved
 
+import os
 
 def get_formatted_summary_string(origin_str):
     return f"/// <summary> {origin_str} </summary>"
