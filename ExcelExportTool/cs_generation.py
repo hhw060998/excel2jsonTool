@@ -125,18 +125,20 @@ def generate_data_class(sheet_name, need_generate_keys):
         # Get By Enum Key
         key_enum_param = "keyEnum"
         get_method_with_enumkey = (
+            f"\n"
             f"public static {sheet_name}Info {get_method_name_by_key}({key_name} {key_enum_param})\n{{\n"
-            f"\treturn {default_method_name}((int){key_enum_param});\n}}"
+            f"\treturn {default_method_name}((int){key_enum_param});\n}}\n"
         )
         
         # Get By String Key
         key_str_param = "keyStr"
         exception_msg_str = """$\"Can not parse the config data key: {keyStr}.\""""
         get_method_with_strkey = (
+            f"\n"
             f"public static {sheet_name}Info {get_method_name_by_key}(string {key_str_param})\n{{\n"
             f"\tif(Enum.TryParse<{key_name}>({key_str_param}, out var {key_enum_param}))\n\t{{\n"
             f"\t\treturn {get_method_name_by_key}({key_enum_param});\n\t}}\n"
-            f"\tthrow new InvalidOperationException({exception_msg_str});\n}}"
+            f"\tthrow new InvalidOperationException({exception_msg_str});\n}}\n"
         )
 
     # Select Value Collection Method
@@ -154,7 +156,7 @@ def generate_data_class(sheet_name, need_generate_keys):
     # Return the final class structure
     return wrap_class_str(
         f"{class_name}",
-        f"{data_property}\n\n{init_method}\n\n{get_method}\n\n{get_method_with_enumkey}\n\n{get_method_with_strkey}\n\n{select_value_collection_method}\n\n{get_info_collection_method}"
+        f"{data_property}\n\n{init_method}\n\n{get_method}\n{get_method_with_enumkey}{get_method_with_strkey}\n{select_value_collection_method}\n\n{get_info_collection_method}"
     )
 
 
