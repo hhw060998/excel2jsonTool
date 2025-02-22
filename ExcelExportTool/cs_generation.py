@@ -106,11 +106,12 @@ def generate_data_class(sheet_name, need_generate_keys):
 
     # Get Method (By ID)
     permission_str = "private" if need_generate_keys else "public"
+    exception_msg_str = """$\"Can not find the config data by id: {id}.\""""
     get_method = (
         f"{permission_str} static {sheet_name}Info GetDataById(int id)\n{{\n"
         f"\tif({property_name}.TryGetValue(id, out var result))\n\t{{\n"
         f"\t\treturn result;\n\t}}\n"
-        f"\tthrow new InvalidOperationException();\n}}"
+        f"\tthrow new InvalidOperationException({exception_msg_str});\n}}"
     )
 
     # Get Method (By Key)
@@ -128,11 +129,12 @@ def generate_data_class(sheet_name, need_generate_keys):
         
         # Get By String Key
         key_str_param = "keyStr"
+        exception_msg_str = """$\"Can not parse the config data key: {keyStr}.\""""
         get_method_with_strkey = (
             f"public static {sheet_name}Info GetDataByKey(string {key_str_param})\n{{\n"
             f"\tif(Enum.TryParse<{key_name}>({key_str_param}, out var {key_enum_param}))\n\t{{\n"
-            f"\t\treturn GetDataById((int){key_enum_param});\n\t}}\n"
-            f"\tthrow new InvalidOperationException();\n}}"
+            f"\t\treturn GetDataByKey({key_enum_param});\n\t}}\n"
+            f"\tthrow new InvalidOperationException({exception_msg_str});\n}}"
         )
 
     # Select Value Collection Method
