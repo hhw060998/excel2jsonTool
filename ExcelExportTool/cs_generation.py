@@ -93,44 +93,65 @@ def generate_data_class(sheet_name, need_generate_keys):
     class_name = f"{sheet_name}Config"
     property_name = "_data"
     property_type_name = f"Dictionary<int, {sheet_name}Info>"
+    
+    # Data Property
     data_property = PRIVATE_STATIC_FIELD_STR.format(property_type_name, property_name)
+
+    # Initialization Method
     init_method = (
         f"public static void Initialize()\n{{\n"
         f"\t{property_name} = ConfigDataUtility.DeserializeConfigData<{property_type_name}>(nameof({class_name}));\n"
         f"}}"
     )
+
+    # Get Method (By ID)
+    permission_str = "private" if need_generate_keys else "public"
     get_method = (
-        f"public static {sheet_name}Info GetDataById(int id)\n{{\n"
+        f"{permission_str} static {sheet_name}Info GetDataById(int id)\n{{\n"
         f"\tif({property_name}.TryGetValue(id, out var result))\n\t{{\n"
         f"\t\treturn result;\n\t}}\n"
         f"\tthrow new InvalidOperationException();\n}}"
     )
 
-    get_method_with_key = ""
+    # Get Method (By Key)
+    get_method_with_enumkey = ""
+    get_method_with_strkey = ""
     if need_generate_keys:
         key_name = f"{sheet_name}Keys"
-        key_str_param = "keyStr"
+        
+        # Get By Enum Key
         key_enum_param = "keyEnum"
-
-        get_method_with_key = (
+        get_method_with_enumkey = (
+            f"public static {sheet_name}Info GetDataByKey({key_name} {key_enum_param})\n{{\n"
+            f"\treturn GetDataById((int){key_enum_param});\n}}"
+        )
+        
+        # Get By String Key
+        key_str_param = "keyStr"
+        get_method_with_strkey = (
             f"public static {sheet_name}Info GetDataByKey(string {key_str_param})\n{{\n"
             f"\tif(Enum.TryParse<{key_name}>({key_str_param}, out var {key_enum_param}))\n\t{{\n"
             f"\t\treturn GetDataById((int){key_enum_param});\n\t}}\n"
-            f"\tthrow new InvalidOperationException();\n}}\n\n"
+            f"\tthrow new InvalidOperationException();\n}}"
         )
 
+    # Select Value Collection Method
     select_value_collection_method = (
         f"public static IEnumerable<TResult> SelectValueCollection<TResult>(Func<{sheet_name}Info, TResult> selector)\n{{\n"
         f"\treturn {property_name}.Values.Select(selector);\n}}"
     )
 
+    # Get Info Collection Method
     get_info_collection_method = (
         f"public static IEnumerable<{sheet_name}Info> GetInfoCollection(Func<{sheet_name}Info, bool> predicate)\n{{\n"
         f"\treturn {property_name}.Values.Where(predicate);\n}}"
     )
 
-    return wrap_class_str(f"{class_name}",
-                          f"{data_property}\n\n{init_method}\n\n{get_method}\n\n{get_method_with_key}{select_value_collection_method}\n\n{get_info_collection_method}")
+    # Return the final class structure
+    return wrap_class_str(
+        f"{class_name}",
+        f"{data_property}\n\n{init_method}\n\n{get_method}\n\n{get_method_with_enumkey}\n\n{get_method_with_strkey}\n\n{select_value_collection_method}\n\n{get_info_collection_method}"
+    )
 
 
 created_files = []
