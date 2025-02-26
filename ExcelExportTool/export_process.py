@@ -26,6 +26,20 @@ def print_yellow(text):
     print(f"{YELLOW}{text}{RESET}")
 
 def batch_excel_to_json(source_folder, output_client_folder, output_project_folder = None, csfile_output_folder = None, enum_output_folder = None):
+    
+    """
+    Converts multiple Excel files in a source folder to JSON format and optionally generates additional files.
+    Args:
+        source_folder (str): The directory containing the Excel files to be processed.
+        output_client_folder (str): The directory where the JSON files for the client will be saved.
+        output_project_folder (str, optional): The directory where the JSON files for the project will be saved. Defaults to None.
+        csfile_output_folder (str, optional): The directory where the C# script files will be saved. Defaults to None.
+        enum_output_folder (str, optional): The directory where the enum files will be saved. Defaults to None.
+    Raises:
+        SystemExit: If a worksheet with the same name has already been exported from another file.
+    Prints:
+        Various status messages indicating the progress of the conversion process, including the number of files processed and the time taken.
+    """
     start_time = time.time()
     print(f"开始导表……")
     print(f"Excel目录:{source_folder}")
