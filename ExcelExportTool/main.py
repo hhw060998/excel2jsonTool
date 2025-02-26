@@ -49,9 +49,21 @@ def batch_excel_to_json(source_folder):
                             sys.exit()
 
                 main_sheet_data = WorksheetData(wb.worksheets[0])
-                main_sheet_data.generate_json(output_project_folder)
-                main_sheet_data.generate_json(output_client_folder)
-                main_sheet_data.generate_script(csfile_output_folder)
+                
+                if output_project_folder is not None:
+                    main_sheet_data.generate_json(output_project_folder)
+                else:
+                    print_red("导出的工程目录没有配置，将跳过导出")
+                    
+                if output_client_folder is not None:
+                    main_sheet_data.generate_json(output_client_folder)
+                else:
+                    print_red("游戏客户端目录没有配置，将跳过导出")
+                    
+                if csfile_output_folder is not None:
+                    main_sheet_data.generate_script(csfile_output_folder)
+                else:
+                    print_red(".cs文件的导出目录没有配置，将跳过导出")
 
                 if len(wb.worksheets) > 1:
                     enum_tag = "Enum-"
