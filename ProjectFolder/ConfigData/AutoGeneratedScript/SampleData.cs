@@ -18,7 +18,7 @@ namespace Data.TableScript
 		public string name { get; set; }
 		
 		/// <summary>
-		/// 整形
+		/// 整型
 		/// </summary>
 		public int damage { get; set; }
 		
@@ -33,7 +33,7 @@ namespace Data.TableScript
 		public List<string> attr_names { get; set; }
 		
 		/// <summary>
-		/// 整形列表
+		/// 整型列表
 		/// </summary>
 		public List<int> attr_values { get; set; }
 		
@@ -43,7 +43,7 @@ namespace Data.TableScript
 		public List<float> float_values { get; set; }
 		
 		/// <summary>
-		/// 字典-整形:字符串
+		/// 字典-整型:字符串
 		/// </summary>
 		public Dictionary<int,string> dict_values1 { get; set; }
 		
@@ -69,7 +69,7 @@ namespace Data.TableScript
 			{
 				return result;
 			}
-			throw new InvalidOperationException();
+			throw new InvalidOperationException($"Can not find the config data by id: {id}.");
 		}
 		
 		public static IEnumerable<TResult> SelectValueCollection<TResult>(Func<SampleInfo, TResult> selector)

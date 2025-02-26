@@ -25,7 +25,7 @@ def print_green(text):
 def print_yellow(text):
     print(f"{YELLOW}{text}{RESET}")
 
-def batch_excel_to_json(source_folder):
+def batch_excel_to_json(source_folder, output_client_folder, output_project_folder = None, csfile_output_folder = None, enum_output_folder = None):
     start_time = time.time()
     print(f"开始导表……")
     print(f"Excel目录:{source_folder}")
@@ -50,22 +50,16 @@ def batch_excel_to_json(source_folder):
 
                 main_sheet_data = WorksheetData(wb.worksheets[0])
                 
-                if output_project_folder is not None:
-                    main_sheet_data.generate_json(output_project_folder)
-                else:
-                    print_red("导出的工程目录没有配置，将跳过导出")
-                    
                 if output_client_folder is not None:
                     main_sheet_data.generate_json(output_client_folder)
-                else:
-                    print_red("游戏客户端目录没有配置，将跳过导出")
+                
+                if output_project_folder is not None:
+                    main_sheet_data.generate_json(output_project_folder)
                     
                 if csfile_output_folder is not None:
                     main_sheet_data.generate_script(csfile_output_folder)
-                else:
-                    print_red(".cs文件的导出目录没有配置，将跳过导出")
 
-                if len(wb.worksheets) > 1:
+                if len(wb.worksheets) > 1 and enum_output_folder is not None:
                     enum_tag = "Enum-"
                     for sheet in wb.worksheets[1:]:
                         if sheet.title.startswith(enum_tag):
@@ -81,16 +75,17 @@ def batch_excel_to_json(source_folder):
     # 如果文件不存在get_create_files中，则删除
     created_files = get_create_files()
     delete_count = 0
-    for folder in [output_project_folder, output_client_folder, csfile_output_folder, enum_output_folder]:
-        for folder_name, subfolders, filenames in os.walk(folder):
-            for filename in filenames:
-                file_path = os.path.abspath(os.path.join(folder_name, filename))  # 使用绝对路径
-                meta_file_path = file_path + '.meta'
-                if file_path not in created_files and not file_path.endswith(
-                        '.meta') and meta_file_path not in created_files:
-                    os.remove(file_path)
-                    print_red(f"删除文件{file_path}")
-                    delete_count += 1
+    for folder in [output_client_folder, output_project_folder, csfile_output_folder, enum_output_folder]:
+        if folder is not None:
+            for folder_name, subfolders, filenames in os.walk(folder):
+                for filename in filenames:
+                    file_path = os.path.abspath(os.path.join(folder_name, filename))  # 使用绝对路径
+                    meta_file_path = file_path + '.meta'
+                    if file_path not in created_files and not file_path.endswith(
+                            '.meta') and meta_file_path not in created_files:
+                        os.remove(file_path)
+                        print_red(f"删除文件{file_path}")
+                        delete_count += 1
 
     if delete_count == 0:
         print("没有需要删除的文件")
@@ -103,12 +98,12 @@ def batch_excel_to_json(source_folder):
     print_green(f"导表结束，成功处理了{file_count}个Excel文件，总耗时{elapsed_time:.2f}秒")
 
 
-# 获取命令行参数
-root_folder = sys.argv[1]
-output_project_folder = sys.argv[2]
-output_client_folder = sys.argv[3]
-csfile_output_folder = sys.argv[4]
-enum_output_folder = sys.argv[5]
+# # 获取命令行参数
+# root_folder = sys.argv[1]
+# output_project_folder = sys.argv[2]
+# output_client_folder = sys.argv[3]
+# csfile_output_folder = sys.argv[4]
+# enum_output_folder = sys.argv[5]
 
-# 调用函数进行转换
-batch_excel_to_json(root_folder)
+# # 调用函数进行转换
+# batch_excel_to_json(root_folder)
