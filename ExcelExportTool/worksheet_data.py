@@ -7,7 +7,6 @@
 from cs_generation import generate_script_file, generate_enum_file, write_to_file
 from excel_processing import read_cell_values, check_repeating_values
 from data_processing import convert_to_type, available_csharp_enum_name
-from main import print_red, print_yellow, print_green
 import sys
 import json
 
@@ -67,7 +66,7 @@ class WorksheetData:
                         enum_values.append(index)
                         index += 1
                     else:
-                        print_red(f"第{index + 1}行第1列的值{cell.value}不是合法的c#枚举名，无法生成主键！")
+                        print(f"第{index + 1}行第1列的值{cell.value}不是合法的c#枚举名，无法生成主键！")
                         sys.exit()
 
         generate_enum_file(enum_type_name, enum_names, enum_values, None, "Data.TableScript", output_folder)
@@ -101,7 +100,7 @@ class WorksheetData:
                 if cell.value is None:
                     if default_value is None:
                         if data_label == "required":
-                            print_red(f"{data_name}的label为required！但是值为空且没有默认值，退出导表")
+                            print(f"{data_name}的label为required！但是值为空且没有默认值，退出导表")
                             sys.exit()
                         else:
                             value = convert_to_type(data_type_str, cell.value)
