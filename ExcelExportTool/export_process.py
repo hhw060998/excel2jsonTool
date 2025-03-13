@@ -52,7 +52,13 @@ def batch_excel_to_json(source_folder, output_client_folder, output_project_fold
                 excel_file = os.path.join(folder_name, filename)
                 print("——————————————————————————————————————————————————")
                 print(f"即将开始处理文件{folder_name}\\{GREEN}{filename}{RESET}")
-                wb = openpyxl.load_workbook(str(excel_file), data_only=True)
+                
+                try:
+                    wb = openpyxl.load_workbook(str(excel_file), data_only=True)
+                
+                except Exception as e:
+                    print_red(f"打开文件{excel_file}失败：{e}")
+                    continue
 
                 # 如果worksheet的名字已经被导出过了（在file_sheet_map中），则中断导表并打印错误信息：与xx文件名的sheet重名
                 if wb.worksheets[0].title in file_sheet_map.values():
