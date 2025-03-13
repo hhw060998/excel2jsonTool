@@ -44,11 +44,18 @@ def batch_excel_to_json(source_folder, output_client_folder, output_project_fold
     print(f"开始导表……")
     print(f"Excel目录:{source_folder}")
 
+    skip_count = 0
     file_count = 0
     file_sheet_map = {}
     for folder_name, subfolders, filenames in os.walk(source_folder):
         for filename in filenames:
-            if filename.endswith('.xlsx') and filename[0].isupper():
+            if filename.endswith('.xlsx'):
+                
+                if filename[0].isupper() == False:
+                    print(f"{YELLOW}文件{folder_name}\\{GREEN}{filename}{YELLOW}首字母不是大写字母，将不会导出数据{RESET}")
+                    skip_count += 1
+                    continue
+                    
                 excel_file = os.path.join(folder_name, filename)
                 print("——————————————————————————————————————————————————")
                 print(f"即将开始处理文件{folder_name}\\{GREEN}{filename}{RESET}")
@@ -115,7 +122,7 @@ def batch_excel_to_json(source_folder, output_client_folder, output_project_fold
     end_time = time.time()
     elapsed_time = end_time - start_time
     print("——————————————————————————————————————————————————")
-    print_green(f"导表结束，成功处理了{file_count}个Excel文件，总耗时{elapsed_time:.2f}秒")
+    print(f"{GREEN}导表结束，跳过了{YELLOW}{skip_count}{GREEN}个Excel文件，成功处理了{GREEN}{file_count}{GREEN}个Excel文件，总耗时{elapsed_time:.2f}秒{RESET}")
 
 
 # # 获取命令行参数
