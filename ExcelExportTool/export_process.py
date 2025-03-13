@@ -7,6 +7,8 @@ import os
 import sys
 import time
 import openpyxl
+from typing import Optional
+from pathlib import Path
 from cs_generation import generate_enum_file_from_sheet, get_create_files
 from worksheet_data import WorksheetData
 
@@ -25,7 +27,13 @@ def print_green(text):
 def print_yellow(text):
     print(f"{YELLOW}{text}{RESET}")
 
-def batch_excel_to_json(source_folder, output_client_folder, output_project_folder = None, csfile_output_folder = None, enum_output_folder = None):
+def batch_excel_to_json(
+    source_folder: str,
+    output_client_folder: str,
+    output_project_folder: Optional[str] = None,
+    csfile_output_folder: Optional[str] = None,
+    enum_output_folder: Optional[str] = None
+    ) -> None:
     
     """
     Converts multiple Excel files in a source folder to JSON format and optionally generates additional files.
@@ -123,14 +131,3 @@ def batch_excel_to_json(source_folder, output_client_folder, output_project_fold
     elapsed_time = end_time - start_time
     print("——————————————————————————————————————————————————")
     print(f"{GREEN}导表结束，跳过了{YELLOW}{skip_count}{GREEN}个Excel文件，成功处理了{GREEN}{file_count}{GREEN}个Excel文件，总耗时{elapsed_time:.2f}秒{RESET}")
-
-
-# # 获取命令行参数
-# root_folder = sys.argv[1]
-# output_project_folder = sys.argv[2]
-# output_client_folder = sys.argv[3]
-# csfile_output_folder = sys.argv[4]
-# enum_output_folder = sys.argv[5]
-
-# # 调用函数进行转换
-# batch_excel_to_json(root_folder)
