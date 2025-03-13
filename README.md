@@ -1,4 +1,5 @@
-# excel2jsonTool [Machine Translation]
+# excel2jsonTool
+
 这是一个使用python编写的轻量级的数据导出工具，根据配置规范的Excel文件导出json和c#处理脚本，可以在游戏启动时进行加载和反序列化。
 
 This is a lightweight data export tool written in python. It exports json and c# processing scripts according to the configuration specification Excel file, which can be loaded and deserialized when the game starts.
@@ -53,17 +54,6 @@ Design Concept and Usage Instructions:
 2. Create a properly formatted Excel file, referencing the ExcelFolder/SL示例.xlsx example. The file name needs to be in uppercase, and the sheet name should conform to C# class naming conventions (camelCase is recommended).
 
 3. After running the ExcelFolder/!【导表】.bat batch script, the data from the Excel file will be exported to the specified JSON and C# script directories.
-
-——————————————————————————————————————
-
-最佳实践：
-
-待补充。
-
-
-Best Practices:
-
-To be supplemented.
 
 ——————————————————————————————————————
 
