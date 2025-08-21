@@ -105,11 +105,12 @@ def batch_excel_to_json(
 
     print("——————————————————————————————————————————————————")
 
-    print(f"准备清理目录其他非生成文件……")
+    print(f"检查是否存在需要清理的文件……")
     # 遍历output_project_folder、output_client_folder、csfile_output_folder、enum_output_folder中的所有文件
     # 如果文件不存在get_create_files中，则删除
     created_files = get_create_files()
     delete_count = 0
+    files_to_delete = []
     for folder in [output_client_folder, output_project_folder, csfile_output_folder, enum_output_folder]:
         if folder is not None:
             for folder_name, subfolders, filenames in os.walk(folder):
@@ -118,9 +119,20 @@ def batch_excel_to_json(
                     meta_file_path = file_path + '.meta'
                     if file_path not in created_files and not file_path.endswith(
                             '.meta') and meta_file_path not in created_files:
-                        os.remove(file_path)
-                        print_red(f"删除文件{file_path}")
-                        delete_count += 1
+                        files_to_delete.append(file_path)
+    
+    # 打印删除文件列表并二次确认才删除
+    if len(files_to_delete) > 0:
+        print_red("以下文件将被删除：")
+        for file_path in files_to_delete:
+            print(f" - {file_path}")
+        confirm = input("确认删除这些文件吗？(y/n): ")
+        
+        if confirm.lower() == 'y':
+            for file_path in files_to_delete:
+                os.remove(file_path)
+                print_red(f"删除文件{file_path}")
+                delete_count += 1
 
     if delete_count == 0:
         print("没有需要删除的文件")
