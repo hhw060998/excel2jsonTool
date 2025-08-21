@@ -29,7 +29,7 @@ def print_yellow(text):
 
 def batch_excel_to_json(
     source_folder: str,
-    output_client_folder: str,
+    output_client_folder: Optional[str] = None,
     output_project_folder: Optional[str] = None,
     csfile_output_folder: Optional[str] = None,
     enum_output_folder: Optional[str] = None
