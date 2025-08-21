@@ -1,90 +1,88 @@
 # Author: huhongwei 306463233@qq.com
 # Created: 2024-09-10
-# MIT License 
+# MIT License
 # All rights reserved
 
 import re
-import sys
+from typing import Any, Callable, Dict, List
 
-# 定义基本类型映射
-PRIMITIVE_TYPE_MAPPING = {
-    'int': int,
-    'float': float,
-    'bool': bool,
-    'str': str,
-    'string': str  # 处理字符串的别名
+# 基本类型映射
+PRIMITIVE_TYPE_MAPPING: Dict[str, Callable[[Any], Any]] = {
+    "int": int,
+    "float": float,
+    "bool": lambda x: str(x).lower() in ("1", "true", "yes"),
+    "str": str,
+    "string": str,  # 兼容别名
 }
 
-# 定义支持的复杂类型前缀
-COMPLEX_TYPE_PREFIXES = ['dict', 'list']
+
+def available_csharp_enum_name(name: str) -> bool:
+    """检查是否为合法的C#枚举名"""
+    return bool(re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", str(name)))
 
 
-def available_csharp_enum_name(name):
-    # 检查是否为有效的C#枚举名称
-    return re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', name)
+def convert_to_type(type_str: str, value: Any) -> Any:
+    """根据类型字符串转换值"""
+    type_str = type_str.strip()
 
-
-def convert_to_type(type_str, value):
-    # 处理基本类型转换
     if type_str in PRIMITIVE_TYPE_MAPPING:
-        return convert_to_primitive_type(type_str, value)
+        return _convert_primitive(type_str, value)
 
-    # 处理复杂类型转换
-    if any(prefix in type_str for prefix in COMPLEX_TYPE_PREFIXES):
-        return convert_to_complex_type(type_str, value)
+    if type_str.startswith("dict"):
+        return _convert_dict(type_str, value)
 
-    print(f"Unsupported data type: {type_str}")
-    sys.exit()
+    if type_str.startswith("list"):
+        return _convert_list(type_str, value)
+
+    raise ValueError(f"Unsupported data type: {type_str}")
 
 
-def convert_to_primitive_type(type_str, value):
-    # 从映射中获取转换函数，提供默认值处理None的情况
-    convert_func = PRIMITIVE_TYPE_MAPPING.get(type_str, lambda x: x)
+def _convert_primitive(type_str: str, value: Any) -> Any:
+    """转换为基本类型"""
+    converter = PRIMITIVE_TYPE_MAPPING[type_str]
     if value is None:
-        return convert_func('') if type_str in ['str', 'string'] else convert_func(0)
-    return convert_func(value)
+        return "" if type_str in ("str", "string") else converter(0)
+    return converter(value)
 
 
-def convert_to_complex_type(type_str, value):
-    # 处理字典类型
-    if "dict" in type_str:
-        return process_dict_type(type_str, value)
+def _convert_dict(type_str: str, value: Any) -> Dict[Any, Any]:
+    """转换为字典类型，例如 dict(int,string)"""
+    result: Dict[Any, Any] = {}
+    type_match = re.search(r"\((.*)\)", type_str)
 
-    # 处理列表类型
-    if "list" in type_str:
-        return process_list_type(type_str, value)
+    if not type_match or value is None:
+        return result
 
-    return value
+    key_type_str, value_type_str = map(str.strip, type_match.group(1).split(","))
+    key_type = PRIMITIVE_TYPE_MAPPING.get(key_type_str, str)
+    val_type = PRIMITIVE_TYPE_MAPPING.get(value_type_str, str)
 
-# 处理字典类型
-def process_dict_type(type_str, value):
-    dict_data = {}
-    type_match = re.search(r'\((.*)\)', type_str)
+    for line in str(value).splitlines():
+        if ":" in line:
+            key, val = map(str.strip, line.split(":", 1))
+            try:
+                result[key_type(key)] = val_type(val)
+            except Exception as e:
+                raise ValueError(f"无法将 {line} 转换为 {type_str}: {e}")
 
-    if type_match and value is not None:
-        key_type_str, value_type_str = map(str.strip, type_match.group(1).split(","))
-        key_type = PRIMITIVE_TYPE_MAPPING.get(key_type_str, str)  # 默认key类型为str
-        value_type = PRIMITIVE_TYPE_MAPPING.get(value_type_str, str)  # 默认value类型为str
+    return result
 
-        for line in value.split("\n"):
-            if ":" in line:
-                key, val = map(str.strip, line.split(":"))
-                dict_data[key_type(key)] = value_type(val)
 
-    return dict_data
+def _convert_list(type_str: str, value: Any) -> List[Any]:
+    """转换为列表类型，例如 list(int)"""
+    result: List[Any] = []
+    type_match = re.search(r"\((.*)\)", type_str)
 
-# 处理列表类型
-def process_list_type(type_str, value):
-    list_data = []
-    type_match = re.search(r'\((.*)\)', type_str)
+    if not type_match or value is None:
+        return result
 
-    if type_match and value is not None:
-        element_type_str = type_match.group(1).strip()
-        element_type = PRIMITIVE_TYPE_MAPPING.get(element_type_str, str)  # 默认元素类型为str
+    element_type_str = type_match.group(1).strip()
+    elem_type = PRIMITIVE_TYPE_MAPPING.get(element_type_str, str)
 
-        if isinstance(value, str):
-            list_data = [element_type(elem.strip()) for elem in value.split(",") if elem]
-        else:
-            list_data = [element_type(value)]
+    if isinstance(value, str):
+        return [elem_type(v.strip()) for v in value.split(",") if v.strip()]
 
-    return list_data
+    try:
+        return [elem_type(value)]
+    except Exception as e:
+        raise ValueError(f"无法将 {value} 转换为 {type_str}: {e}")

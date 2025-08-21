@@ -1,145 +1,166 @@
 # Author: huhongwei 306463233@qq.com
 # Created: 2024-09-10
-# MIT License 
+# MIT License
 # All rights reserved
 
-import os
 import sys
 import time
 import openpyxl
-from typing import Optional
 from pathlib import Path
+from typing import Optional
 from cs_generation import generate_enum_file_from_sheet, get_create_files
 from worksheet_data import WorksheetData
 
 # ANSI escape sequences for colors
 GREEN = '\033[92m'
 RED = '\033[91m'
-RESET = '\033[0m'
 YELLOW = '\033[93m'
+RESET = '\033[0m'
 
-def print_red(text):
-    print(f"{RED}{text}{RESET}")
 
-def print_green(text):
-    print(f"{GREEN}{text}{RESET}")
+def log_info(msg: str) -> None:
+    print(msg)
 
-def print_yellow(text):
-    print(f"{YELLOW}{text}{RESET}")
+
+def log_warn(msg: str) -> None:
+    print(f"{YELLOW}{msg}{RESET}")
+
+
+def log_error(msg: str) -> None:
+    print(f"{RED}{msg}{RESET}")
+
+
+def log_success(msg: str) -> None:
+    print(f"{GREEN}{msg}{RESET}")
+
+
+def process_excel_file(
+    excel_path: Path,
+    file_sheet_map: dict[str, str],
+    output_client_folder: Optional[str],
+    output_project_folder: Optional[str],
+    csfile_output_folder: Optional[str],
+    enum_output_folder: Optional[str],
+) -> None:
+    """处理单个 Excel 文件"""
+    try:
+        wb = openpyxl.load_workbook(str(excel_path), data_only=True)
+    except Exception as e:
+        log_error(f"打开文件 {excel_path} 失败：{e}")
+        return
+
+    main_sheet = wb.worksheets[0]
+
+    # 检查 sheet 重名
+    if main_sheet.title in file_sheet_map.values():
+        dup_file = next(f for f, s in file_sheet_map.items() if s == main_sheet.title)
+        raise RuntimeError(
+            f"存在与 [{dup_file}] 中相同名称的 sheet [{main_sheet.title}]，无法重复生成"
+        )
+
+    main_sheet_data = WorksheetData(main_sheet)
+
+    if output_client_folder:
+        main_sheet_data.generate_json(output_client_folder)
+    if output_project_folder:
+        main_sheet_data.generate_json(output_project_folder)
+    if csfile_output_folder:
+        main_sheet_data.generate_script(csfile_output_folder)
+
+    if len(wb.worksheets) > 1 and enum_output_folder:
+        enum_tag = "Enum-"
+        for sheet in wb.worksheets[1:]:
+            if sheet.title.startswith(enum_tag):
+                generate_enum_file_from_sheet(sheet, enum_tag, enum_output_folder)
+
+    file_sheet_map[excel_path.name] = main_sheet.title
+
+
+def cleanup_files(output_folders: list[Optional[str]]) -> None:
+    """清理不在 create_files 列表中的文件"""
+    created_files = get_create_files()
+    files_to_delete: list[Path] = []
+
+    for folder in filter(None, output_folders):
+        for path in Path(folder).rglob("*"):
+            if path.is_file():
+                meta_file = path.with_suffix(path.suffix + ".meta")
+                if (
+                    str(path) not in created_files
+                    and not path.suffix == ".meta"
+                    and str(meta_file) not in created_files
+                ):
+                    files_to_delete.append(path)
+
+    if not files_to_delete:
+        log_info("没有需要删除的文件")
+        return
+
+    log_error("以下文件将被删除：")
+    for f in files_to_delete:
+        log_error(f" - {f}")
+
+    confirm = input("确认删除这些文件吗？(y/n): ").strip().lower()
+    if confirm == "y":
+        for f in files_to_delete:
+            f.unlink(missing_ok=True)
+            log_error(f"删除文件 {f}")
+        log_info(f"删除了 {len(files_to_delete)} 个文件")
+    else:
+        log_warn("用户取消了文件删除操作")
+
 
 def batch_excel_to_json(
     source_folder: str,
     output_client_folder: Optional[str] = None,
     output_project_folder: Optional[str] = None,
     csfile_output_folder: Optional[str] = None,
-    enum_output_folder: Optional[str] = None
-    ) -> None:
-    
+    enum_output_folder: Optional[str] = None,
+) -> None:
     """
     Converts multiple Excel files in a source folder to JSON format and optionally generates additional files.
-    Args:
-        source_folder (str): The directory containing the Excel files to be processed.
-        output_client_folder (str): The directory where the JSON files for the client will be saved.
-        output_project_folder (str, optional): The directory where the JSON files for the project will be saved. Defaults to None.
-        csfile_output_folder (str, optional): The directory where the C# script files will be saved. Defaults to None.
-        enum_output_folder (str, optional): The directory where the enum files will be saved. Defaults to None.
-    Raises:
-        SystemExit: If a worksheet with the same name has already been exported from another file.
-    Prints:
-        Various status messages indicating the progress of the conversion process, including the number of files processed and the time taken.
     """
     start_time = time.time()
-    print(f"开始导表……")
-    print(f"Excel目录:{source_folder}")
+    log_info("开始导表……")
+    log_info(f"Excel目录: {source_folder}")
 
     skip_count = 0
     file_count = 0
-    file_sheet_map = {}
-    for folder_name, subfolders, filenames in os.walk(source_folder):
-        for filename in filenames:
-            if filename.endswith('.xlsx'):
-                
-                if filename[0].isupper() == False:
-                    print(f"{YELLOW}文件{folder_name}\\{GREEN}{filename}{YELLOW}首字母不是大写字母，将不会导出数据{RESET}")
-                    skip_count += 1
-                    continue
-                    
-                excel_file = os.path.join(folder_name, filename)
-                print("——————————————————————————————————————————————————")
-                print(f"即将开始处理文件{folder_name}\\{GREEN}{filename}{RESET}")
-                
-                try:
-                    wb = openpyxl.load_workbook(str(excel_file), data_only=True)
-                
-                except Exception as e:
-                    print_red(f"打开文件{excel_file}失败：{e}")
-                    continue
+    file_sheet_map: dict[str, str] = {}
 
-                # 如果worksheet的名字已经被导出过了（在file_sheet_map中），则中断导表并打印错误信息：与xx文件名的sheet重名
-                if wb.worksheets[0].title in file_sheet_map.values():
-                    # 获取已经导出且sheet名重复的文件名
-                    for key, value in file_sheet_map.items():
-                        if value == wb.worksheets[0].title:
-                            print_red(f"存在与[{key}]中相同名称的sheet[{wb.worksheets[0].title}]，无法重复生成，退出导表")
-                            sys.exit()
+    for excel_path in Path(source_folder).rglob("*.xlsx"):
+        if not excel_path.name[0].isupper():
+            log_warn(f"文件 {excel_path} 首字母不是大写字母，将不会导出数据")
+            skip_count += 1
+            continue
 
-                main_sheet_data = WorksheetData(wb.worksheets[0])
-                
-                if output_client_folder is not None:
-                    main_sheet_data.generate_json(output_client_folder)
-                
-                if output_project_folder is not None:
-                    main_sheet_data.generate_json(output_project_folder)
-                    
-                if csfile_output_folder is not None:
-                    main_sheet_data.generate_script(csfile_output_folder)
+        log_info("——————————————————————————————————————————————————")
+        log_info(f"即将开始处理文件 {GREEN}{excel_path}{RESET}")
 
-                if len(wb.worksheets) > 1 and enum_output_folder is not None:
-                    enum_tag = "Enum-"
-                    for sheet in wb.worksheets[1:]:
-                        if sheet.title.startswith(enum_tag):
-                            generate_enum_file_from_sheet(sheet, enum_tag, enum_output_folder)
+        try:
+            process_excel_file(
+                excel_path,
+                file_sheet_map,
+                output_client_folder,
+                output_project_folder,
+                csfile_output_folder,
+                enum_output_folder,
+            )
+            file_count += 1
+        except RuntimeError as e:
+            log_error(str(e))
+            sys.exit(1)
 
-                file_count += 1
-                file_sheet_map[filename] = wb.worksheets[0].title
+    log_info("——————————————————————————————————————————————————")
+    log_info("检查是否存在需要清理的文件……")
 
-    print("——————————————————————————————————————————————————")
+    cleanup_files(
+        [output_client_folder, output_project_folder, csfile_output_folder, enum_output_folder]
+    )
 
-    print(f"检查是否存在需要清理的文件……")
-    # 遍历output_project_folder、output_client_folder、csfile_output_folder、enum_output_folder中的所有文件
-    # 如果文件不存在get_create_files中，则删除
-    created_files = get_create_files()
-    delete_count = 0
-    files_to_delete = []
-    for folder in [output_client_folder, output_project_folder, csfile_output_folder, enum_output_folder]:
-        if folder is not None:
-            for folder_name, subfolders, filenames in os.walk(folder):
-                for filename in filenames:
-                    file_path = os.path.abspath(os.path.join(folder_name, filename))  # 使用绝对路径
-                    meta_file_path = file_path + '.meta'
-                    if file_path not in created_files and not file_path.endswith(
-                            '.meta') and meta_file_path not in created_files:
-                        files_to_delete.append(file_path)
-    
-    # 打印删除文件列表并二次确认才删除
-    if len(files_to_delete) > 0:
-        print_red("以下文件将被删除：")
-        for file_path in files_to_delete:
-            print(f" - {file_path}")
-        confirm = input("确认删除这些文件吗？(y/n): ")
-        
-        if confirm.lower() == 'y':
-            for file_path in files_to_delete:
-                os.remove(file_path)
-                print_red(f"删除文件{file_path}")
-                delete_count += 1
-
-    if delete_count == 0:
-        print("没有需要删除的文件")
-    else:
-        print(f"删除了{delete_count}个文件")
-
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-    print("——————————————————————————————————————————————————")
-    print(f"{GREEN}导表结束，跳过了{YELLOW}{skip_count}{GREEN}个Excel文件，成功处理了{GREEN}{file_count}{GREEN}个Excel文件，总耗时{elapsed_time:.2f}秒{RESET}")
+    elapsed_time = time.time() - start_time
+    log_info("——————————————————————————————————————————————————")
+    log_success(
+        f"导表结束，跳过了 {YELLOW}{skip_count}{GREEN} 个Excel文件，"
+        f"成功处理了 {file_count} 个Excel文件，总耗时 {elapsed_time:.2f} 秒"
+    )
