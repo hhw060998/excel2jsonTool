@@ -4,6 +4,7 @@
 # All rights reserved
 
 import os
+from pathlib import Path
 
 def get_formatted_summary_string(origin_str):
     return f"/// <summary> {origin_str} </summary>"
@@ -167,7 +168,7 @@ def write_to_file(content, file_path):
         with open(file_path, 'w', encoding='utf-8') as file:
             file.write(content)
         print(f"成功生成文件: {file_path}")
-        created_files.append(os.path.abspath(file_path))  # 使用绝对路径
+        created_files.append(str(Path(file_path).resolve())) # 支持绝对路径和相对路径
     except Exception as e:
         print(f"写入文件失败: {file_path}, 错误: {e}")
 

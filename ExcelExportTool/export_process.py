@@ -86,9 +86,9 @@ def cleanup_files(output_folders: list[Optional[str]]) -> None:
             if path.is_file():
                 meta_file = path.with_suffix(path.suffix + ".meta")
                 if (
-                    str(path) not in created_files
+                    str(path.resolve()) not in created_files
                     and not path.suffix == ".meta"
-                    and str(meta_file) not in created_files
+                    and str(meta_file.resolve()) not in created_files
                 ):
                     files_to_delete.append(path)
 
