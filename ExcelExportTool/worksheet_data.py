@@ -5,6 +5,7 @@
 
 import json
 from typing import Any, Dict, List
+from collections import defaultdict
 from cs_generation import generate_script_file, generate_enum_file, write_to_file
 from excel_processing import read_cell_values, check_repeating_values
 from data_processing import convert_to_type, available_csharp_enum_name
@@ -28,6 +29,10 @@ class WorksheetData:
 
         check_repeating_values(self.field_names)
         self.need_generate_keys = self._need_generate_keys()
+
+        # 如果需要生成字符串主键（枚举），则在初始化阶段就检查首列是否有不合法名字或重复值
+        if self.need_generate_keys:
+            self._check_duplicate_enum_keys()
 
     def _need_generate_keys(self) -> bool:
         """判断是否需要为数据行生成自增 key"""
@@ -58,18 +63,48 @@ class WorksheetData:
             if self.data_labels[i] != "ignore" and i > 0
         }
 
-    def _validate_enum_name(self, name: str, row_index: int) -> None:
-        """检查枚举名是否合法"""
+    def _validate_enum_name(self, name: str, excel_row: int) -> None:
+        """检查枚举名是否合法（excel_row 为真实 Excel 行号，用于错误提示）"""
         if not available_csharp_enum_name(name):
-            raise RuntimeError(f"第{row_index + 1}行第1列的值 {name} 不是合法的C#枚举名，无法生成主键！")
+            raise RuntimeError(f"第{excel_row}行第1列的值 {name} 不是合法的C#枚举名，无法生成主键！")
+
+    def _check_duplicate_enum_keys(self) -> None:
+        """
+        在初始化时检查用于生成枚举的首列（字符串主键）：
+        - 先验证每个名字是否合法
+        - 收集出现的 Excel 行号，发现重复则抛出异常，异常信息包含重复值与对应的行号列表
+        """
+        name_to_rows = defaultdict(list)
+
+        # self.row_data 来自 iter_rows(min_row=7, ...)，因此 enumerate 的第一个行对应 Excel 行 7
+        for idx, row in enumerate(self.row_data):
+            excel_row = idx + 7  # 真实 Excel 行号
+            first_cell_value = row[0].value
+
+            # 合法性检查（会在不合法时立即抛错，带上真实行号）
+            self._validate_enum_name(first_cell_value, excel_row)
+
+            name_to_rows[first_cell_value].append(excel_row)
+
+        # 检查重复项
+        duplicates = {name: rows for name, rows in name_to_rows.items() if len(rows) > 1}
+        if duplicates:
+            dup_msgs = []
+            for name, rows in duplicates.items():
+                dup_msgs.append(f"'{name}' 出现在行 {rows}")
+            raise RuntimeError(
+                "发现重复的字符串主键（将用于生成枚举），请修正后重试：\n" + "\n".join(dup_msgs)
+            )
 
     def _generate_enum_keys_csfile(self, output_folder: str) -> None:
         enum_type_name = f"{self.name}Keys"
-        enum_names, enum_values = [], []
+        enum_names: List[str] = []
+        enum_values: List[int] = []
 
         for index, row in enumerate(self.row_data):
             first_cell_value = row[0].value
-            self._validate_enum_name(first_cell_value, index)
+            # 这里仍保留合法性检查以防未经过初始化流程（防御性编程）
+            self._validate_enum_name(first_cell_value, index + 7)
             enum_names.append(first_cell_value)
             enum_values.append(index)
 
