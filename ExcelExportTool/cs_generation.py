@@ -185,11 +185,8 @@ def generate_data_class(sheet_name: str,
     # 组合键常量与方法（可能基于真实字段名）
     composite_constant_str = ""
     combine_method_str = ""
-    get_by_composite_str = ""
-    try_get_by_composite_str = ""
     # 以及基于真实字段名的命名（若 composite_key_fields 有值）
-    specific_get_str = ""
-    specific_try_get_str = ""
+    get_method_with_composite_key = ""
     if composite_keys:
         composite_constant_str = f"private const int COMPOSITE_MULTIPLIER = {composite_multiplier};\n"
 
@@ -210,13 +207,13 @@ def generate_data_class(sheet_name: str,
                 param2 = _sanitize_param_name(real2)
 
                 # Generate GetDataBy<Real1>And<Real2>
-                specific_get_str = (
+                get_method_with_composite_key = (
                     f"public static {sheet_name}Info GetDataByCompositeKey(int {param1}, int {param2})\n{{\n"
                     f"\t// Use combined key generated from ({real1},{real2})\n"
                     f"\treturn {default_method_name}(CombineKey({param1}, {param2}));\n}}"
                 )
             else:
-                specific_get_str = (
+                get_method_with_composite_key = (
                     f"public static {sheet_name}Info GetDataByCompositeKey(int key1, int key2)\n{{\n"
                     f"\treturn {default_method_name}(CombineKey(key1, key2));\n}}"   
                 )
@@ -242,10 +239,7 @@ def generate_data_class(sheet_name: str,
         get_method_with_enumkey,
         get_method_with_strkey,
         combine_method_str,
-        get_by_composite_str,
-        try_get_by_composite_str,
-        specific_get_str,
-        specific_try_get_str,
+        get_method_with_composite_key,
         select_value_collection_method,
         get_info_collection_method
     ]
