@@ -40,14 +40,13 @@ def generate_enum_file(enum_type_name, enum_names, enum_values, remarks, name_sp
 
 
 USING_NAMESPACE_STR = "\n".join([
-    "using System;",
     "using System.Collections.Generic;",
-    "using System.Linq;"
+    "using Newtonsoft.Json;",
     "\n",
     ""
 ])
 
-CONFIG_DATA_ATTRIBUTE_STR = "[ConfigData]"
+# CONFIG_DATA_ATTRIBUTE_STR = "[ConfigData]"
 PRIVATE_STATIC_FIELD_STR = "private static {0} {1};"
 NAMESPACE_WRAPPER_STR = "namespace Data.TableScript\n{{\n{0}\n}}"
 
@@ -105,7 +104,7 @@ def generate_script_file(sheet_name: str,
     """
 
     info_class = f"{auto_generated_summary_string}\n{generate_info_class(sheet_name, properties_dict, property_remarks)}"
-    data_class = f"{CONFIG_DATA_ATTRIBUTE_STR}\n{generate_data_class(sheet_name, need_generate_keys, composite_keys, composite_multiplier, composite_key_fields)}"
+    data_class = f"{generate_data_class(sheet_name, need_generate_keys, composite_keys, composite_multiplier, composite_key_fields)}"
     file_content = f"{info_class}\n\n{data_class}"
     final_file_content = USING_NAMESPACE_STR + NAMESPACE_WRAPPER_STR.format(add_indentation(file_content))
 
@@ -121,20 +120,31 @@ def generate_info_class(class_name, properties_dict, property_remarks):
     # 生成已有字段
     converted_props = []
     for key, value in properties_dict.items():
+        # 添加 JsonProperty 特性和私有 setter
         converted_props.append(
-            f"{format_property_remark(property_remarks[key])}\npublic {convert_type_to_csharp(value)} {key} {{ get; set; }}"
+            f"{format_property_remark(property_remarks[key])}\n"
+            f"[JsonProperty(\"{key}\")]\n"
+            f"public {convert_type_to_csharp(value)} {key} {{ get; private set; }}"
         )
 
     # 自动补齐 id / name，并打印警告
     added_any = False
     if "id" not in properties_dict:
-        converted_props.append("/// <summary> Auto-added to satisfy IConfigRawInfo </summary>\npublic int id { get; set; }")
-        log_warn("Info class is missing property 'id'. Auto-generated 'public int id { get; set; }'.")
+        converted_props.append(
+            "/// <summary> Auto-added to satisfy IConfigRawInfo </summary>\n"
+            "[JsonProperty(\"id\")]\n"
+            "public int id { get; private set; }"
+        )
+        log_warn("Info class is missing property 'id'. Auto-generated 'public int id { get; private set; }'.")
         added_any = True
 
     if "name" not in properties_dict:
-        converted_props.append("/// <summary> Auto-added to satisfy IConfigRawInfo </summary>\npublic string name { get; set; }")
-        log_warn("Info class is missing property 'name'. Auto-generated 'public string name { get; set; }'.")
+        converted_props.append(
+            "/// <summary> Auto-added to satisfy IConfigRawInfo </summary>\n"
+            "[JsonProperty(\"name\")]\n"
+            "public string name { get; private set; }"
+        )
+        log_warn("Info class is missing property 'name'. Auto-generated 'public string name { get; private set; }'.")
         added_any = True
 
     if added_any:
@@ -152,144 +162,46 @@ def generate_data_class(sheet_name: str,
                         composite_multiplier: int,
                         composite_key_fields: Optional[Dict[str, str]]):
     """
-    生成数据类字符串。若 composite_keys 且 composite_key_fields 提供了真实字段名，
-    则生成以真实字段名为参数名的方法（例如 GetDataByIdAndGroup）。
+    生成数据类字符串（仅包含类声明与必要的 CompositeMultiplier 覆写）。
+    - 如果 need_generate_keys 为 True，则继承 ConfigDataWithKey<{SheetName}Keys, {SheetName}Info>
+    - 否则如果 composite_keys 为 True，则继承 ConfigDataWithCompositeId<{SheetName}Info> 并实现 CompositeMultiplier
+    - 否则继承 ConfigDataBase<{SheetName}Info>
+    注意：若 need_generate_keys 和 composite_keys 同时为 True，则按 need_generate_keys 优先。
     """
 
     class_name = f"{sheet_name}Config"
-    property_name = "_data"
-    property_type_name = f"Dictionary<int, {sheet_name}Info>"
 
-    # Data Property
-    data_property = PRIVATE_STATIC_FIELD_STR.format(property_type_name, property_name)
-
-    # Initialization Method
-    init_method = (
-        f"public static void Initialize()\n{{\n"
-        f"\t{property_name} = ConfigDataUtility.DeserializeConfigData<{property_type_name}>(nameof({class_name}));\n"
-        f"}}"
-    )
-
-    # Get Method (By ID)
-    permission_str = "private" if need_generate_keys else "public"
-    default_method_name = "GetDataById"
-    exception_msg_str = """$\"Can not find the config data by id: {id}.\""""
-    get_method = (
-        f"{permission_str} static {sheet_name}Info {default_method_name}(int id)\n{{\n"
-        f"\tif({property_name}.TryGetValue(id, out var result))\n\t{{\n"
-        f"\t\treturn result;\n\t}}\n"
-        f"\tthrow new InvalidOperationException({exception_msg_str});\n}}"
-    )
-
-    # Get Method (By Key) - 原有枚举/字符串 key
-    get_method_with_enumkey = ""
-    get_method_with_strkey = ""
+    # 决定基类（优先级： need_generate_keys -> composite_keys -> 默认 ConfigDataBase）
     if need_generate_keys:
-        key_name = f"{sheet_name}Keys"
-        get_method_name_by_key = "GetDataByKey"
+        base_class = f"ConfigDataWithKey<{sheet_name}Info, {sheet_name}Keys>"
+    elif composite_keys:
+        base_class = f"ConfigDataWithCompositeId<{sheet_name}Info>"
+    else:
+        base_class = f"ConfigDataBase<{sheet_name}Info>"
 
-        # Get By Enum Key
-        key_enum_param = "keyEnum"
-        get_method_with_enumkey = (
-            f"public static {sheet_name}Info {get_method_name_by_key}({key_name} {key_enum_param})\n{{\n"
-            f"\treturn {default_method_name}((int){key_enum_param});\n}}"
-        )
+    # 如果选用了 composite 基类，则实现 CompositeMultiplier 属性
+    composite_override = ""
+    if composite_keys and base_class.startswith("ConfigDataWithCompositeId"):
+        # 使用 expression-bodied 属性以保持代码简洁
+        composite_override = f"protected override int CompositeMultiplier => {composite_multiplier};"
 
-        # Get By String Key
-        key_str_param = "keyStr"
-        exception_msg_str = """$\"Can not parse the config data key: {keyStr}.\""""
-        get_method_with_strkey = (
-            f"public static {sheet_name}Info {get_method_name_by_key}(string {key_str_param})\n{{\n"
-            f"\tif(Enum.TryParse<{key_name}>({key_str_param}, out var {key_enum_param}))\n\t{{\n"
-            f"\t\treturn {get_method_name_by_key}({key_enum_param});\n\t}}\n"
-            f"\tthrow new InvalidOperationException({exception_msg_str});\n}}"
-        )
+    # 生成类体内容（仅包含可能需要的覆盖成员或注释）
+    parts = []
 
-    # 组合键常量与方法（可能基于真实字段名）
-    composite_constant_str = ""
-    combine_method_str = ""
-    # 以及基于真实字段名的命名（若 composite_key_fields 有值）
-    get_method_with_composite_key = ""
-    if composite_keys:
-        composite_constant_str = f"private const int COMPOSITE_MULTIPLIER = {composite_multiplier};\n"
+    # 自动生成注释以说明这是自动生成文件的一部分（可选）
+    parts.append(f"// Config data class for {sheet_name}. Generated by tool.")
+    parts.append("// Query methods are provided by ConfigData manager; keep this class minimal.")
 
-        combine_method_str = (
-            "public static int CombineKey(int key1, int key2)\n{\n"
-            "\tif (key1 is < 0 or >= COMPOSITE_MULTIPLIER) throw new ArgumentOutOfRangeException(nameof(key1));\n"
-            "\tif (key2 is < 0 or >= COMPOSITE_MULTIPLIER) throw new ArgumentOutOfRangeException(nameof(key2));\n"
-            "\treturn key1 * COMPOSITE_MULTIPLIER + key2;\n}"
-        )
+    if composite_override:
+        parts.append(composite_override)
 
-        # 如果 composite_key_fields 给出真实字段名，例如 {"key1":"id","key2":"group"}
-        if composite_key_fields and isinstance(composite_key_fields, dict):
-            real1 = composite_key_fields.get("key1")
-            real2 = composite_key_fields.get("key2")
-            if isinstance(real1, str) and isinstance(real2, str) and real1 and real2:
-                # 生成合法参数名与方法后缀
-                param1 = _sanitize_param_name(real1)
-                param2 = _sanitize_param_name(real2)
+    class_content = "\n\n".join(parts)
 
-                # Generate GetDataBy<Real1>And<Real2>
-                get_method_with_composite_key = (
-                    f"public static {sheet_name}Info GetDataByCompositeKey(int {param1}, int {param2})\n{{\n"
-                    f"\t// Use combined key generated from ({real1},{real2})\n"
-                    f"\treturn {default_method_name}(CombineKey({param1}, {param2}));\n}}"
-                )
-            else:
-                get_method_with_composite_key = (
-                    f"public static {sheet_name}Info GetDataByCompositeKey(int key1, int key2)\n{{\n"
-                    f"\treturn {default_method_name}(CombineKey(key1, key2));\n}}"   
-                )
-
-    # Select Value Collection Method
-    select_value_collection_method = (
-        f"public static IEnumerable<TResult> SelectValueCollection<TResult>(Func<{sheet_name}Info, TResult> selector)\n{{\n"
-        f"\treturn {property_name}.Values.Select(selector);\n}}"
-    )
-
-    # Get Info Collection Method
-    get_info_collection_method = (
-        f"public static IEnumerable<{sheet_name}Info> GetInfoCollection(Func<{sheet_name}Info, bool> predicate)\n{{\n"
-        f"\treturn {property_name}.Values.Where(predicate);\n}}"
-    )
-
-    # GetDisplayMap Method (Editor Only)
-    get_display_map_method = (
-        "#if UNITY_EDITOR\n"
-        "        public static Dictionary<int, string> GetDisplayMap()\n"
-        "        {\n"
-        "            if (_data == null)\n"
-        "            {\n"
-        "                Initialize();\n"
-        "            }\n"
-        "\n"
-        "            return _data!.ToDictionary(kv => kv.Key, kv => $\"{kv.Value.id}-{kv.Value.name}\");\n"
-        "        }\n"
-        "#endif"
-    )
-
-    # 构建类内容列表
-    class_parts = [
-        data_property,
-        composite_constant_str,
-        init_method,
-        get_method,
-        get_method_with_enumkey,
-        get_method_with_strkey,
-        combine_method_str,
-        get_method_with_composite_key,
-        select_value_collection_method,
-        get_info_collection_method,
-        get_display_map_method  # 新增的GetDisplayMap方法
-    ]
-
-    # 过滤空字符串并确保每个部分之间只有一个空行
-    non_empty_parts = [part for part in class_parts if part.strip()]
-    class_content = '\n\n'.join(non_empty_parts)
-
+    # wrap_class_str 会在 class 名称后加上 " : {interface_name}"，因此把 base_class 传入 interface_name 参数
     return wrap_class_str(
         f"{class_name}",
-        class_content
+        class_content,
+        interface_name=base_class
     )
 
 
