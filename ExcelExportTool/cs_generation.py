@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 from typing import Dict, Optional
 import re
+from log import log_warn
 
 def get_formatted_summary_string(origin_str):
     return f"/// <summary> {origin_str} </summary>"
@@ -14,6 +15,7 @@ def get_formatted_summary_string(origin_str):
 auto_generated_summary_string = get_formatted_summary_string("This is auto-generated, don't modify manually")
 
 enum_namespace = "ConfigDataName"
+I_CONFIG_RAW_INFO_NAME = "IConfigRawInfo"
 
 def generate_enum_file_from_sheet(sheet, enum_tag, output_folder):
     enum_type_name = sheet.title.replace(enum_tag, "")
@@ -64,7 +66,7 @@ def convert_type_to_csharp(type_str):
 # 包装类结构，支持可配置缩进
 def wrap_class_str(class_name, class_content_str, interface_name="", indent_level=1):
     interface_part = f" : {interface_name}" if interface_name else ""
-    indentation = "\t" * indent_level  # 动态调整缩进级别
+    indentation = "\t" * indent_level
     indented_content = add_indentation(class_content_str, indentation)
     return f"public class {class_name}{interface_part}\n{{\n{indented_content}\n}}"
 
@@ -116,11 +118,32 @@ def generate_info_class(class_name, properties_dict, property_remarks):
         str_text = "\n".join([f"/// {line}" for line in remark.splitlines()])
         return f"/// <summary>\n{str_text}\n/// </summary>"
 
-    converted_properties = "\n\n".join([
-        f"{format_property_remark(property_remarks[key])}\npublic {convert_type_to_csharp(value)} {key} {{ get; set; }}"
-        for key, value in properties_dict.items()
-    ])
-    return wrap_class_str(class_name + "Info", converted_properties)
+    # 生成已有字段
+    converted_props = []
+    for key, value in properties_dict.items():
+        converted_props.append(
+            f"{format_property_remark(property_remarks[key])}\npublic {convert_type_to_csharp(value)} {key} {{ get; set; }}"
+        )
+
+    # 自动补齐 id / name，并打印警告
+    added_any = False
+    if "id" not in properties_dict:
+        converted_props.append("/// <summary> Auto-added to satisfy IConfigRawInfo </summary>\npublic int id { get; set; }")
+        log_warn("Info class is missing property 'id'. Auto-generated 'public int id { get; set; }'.")
+        added_any = True
+
+    if "name" not in properties_dict:
+        converted_props.append("/// <summary> Auto-added to satisfy IConfigRawInfo </summary>\npublic string name { get; set; }")
+        log_warn("Info class is missing property 'name'. Auto-generated 'public string name { get; set; }'.")
+        added_any = True
+
+    if added_any:
+        log_warn(f"{class_name}Info was missing required properties for IConfigRawInfo; they were auto-added.")
+
+    converted_properties = "\n\n".join(converted_props)
+
+    # 让 Info 实现 IConfigRawInfo
+    return wrap_class_str(class_name + "Info", converted_properties, interface_name=I_CONFIG_RAW_INFO_NAME)
 
 
 def generate_data_class(sheet_name: str,
@@ -230,6 +253,21 @@ def generate_data_class(sheet_name: str,
         f"\treturn {property_name}.Values.Where(predicate);\n}}"
     )
 
+    # GetDisplayMap Method (Editor Only)
+    get_display_map_method = (
+        "#if UNITY_EDITOR\n"
+        "        public static Dictionary<int, string> GetDisplayMap()\n"
+        "        {\n"
+        "            if (_data == null)\n"
+        "            {\n"
+        "                Initialize();\n"
+        "            }\n"
+        "\n"
+        "            return _data!.ToDictionary(kv => kv.Key, kv => $\"{kv.Value.id}-{kv.Value.name}\");\n"
+        "        }\n"
+        "#endif"
+    )
+
     # 构建类内容列表
     class_parts = [
         data_property,
@@ -241,7 +279,8 @@ def generate_data_class(sheet_name: str,
         combine_method_str,
         get_method_with_composite_key,
         select_value_collection_method,
-        get_info_collection_method
+        get_info_collection_method,
+        get_display_map_method  # 新增的GetDisplayMap方法
     ]
 
     # 过滤空字符串并确保每个部分之间只有一个空行

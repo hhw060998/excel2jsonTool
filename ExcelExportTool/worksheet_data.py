@@ -11,6 +11,7 @@ import re
 from cs_generation import generate_script_file, generate_enum_file, write_to_file
 from excel_processing import read_cell_values, check_repeating_values
 from data_processing import convert_to_type, available_csharp_enum_name
+from log import log_warn
 
 
 class WorksheetData:
@@ -69,6 +70,9 @@ class WorksheetData:
         # 如果检测到组合键配置，则在初始化阶段检查 key1/key2 的合法性、范围与组合唯一性
         if self.composite_keys:
             self._check_duplicate_composite_keys()
+            
+        # 当使用单列 int 主键但第一列字段名不是 id 时，记录标志并准备一次性警告
+        self.first_int_pk_not_named_id_warned = False
 
     def _need_generate_keys(self) -> bool:
         """判断是否需要为数据行生成自增 key（原逻辑）"""
@@ -259,9 +263,17 @@ class WorksheetData:
         generate_enum_file(enum_type_name, enum_names, enum_values, None, "Data.TableScript", output_folder)
 
     def generate_json(self, output_folder: str) -> None:
-        """将表格数据导出为 JSON 文件（支持单列 int 主键 / 自动生成键 / 以及组合键）"""
+        """将表格数据导出为 JSON 文件（支持单列 int 主键 / 自动生成键 / 以及组合键）。
+        这里同时确保给每条记录填充 info.id：
+            - 字符串主键（枚举）：id = 序号（枚举 int 值）
+            - 组合键：id = key1*MULTIPLIER + key2
+            - 单列 int 主键：id = 第一列的 int 值；若第一列字段名不是 'id' 则打印一次警告
+        """
         data: Dict[Any, Dict[str, Any]] = {}
         serial_key = 0
+
+        # 预取“第一列真实字段名”，用来判断是否叫 id
+        first_field_real_name = self._actual_field_name(1) if len(self.field_names) > 1 else None
 
         for row_idx, row in enumerate(self.row_data):
             row_data = {}
@@ -272,18 +284,15 @@ class WorksheetData:
                 row_data_key = serial_key
                 serial_key += 1
             elif self.composite_keys:
-                # 组合键：强制取数据前两列 row[0], row[1]
+                # 组合键：取数据前两列 row[0], row[1]
                 excel_row = row_idx + 7
                 try:
                     key1 = int(row[0].value)
                     key2 = int(row[1].value)
                 except Exception:
                     raise RuntimeError(f"第{excel_row}行无法解析 key1/key2 为 int（请检查数据）")
-
-                # 再次做范围校验以确保安全
                 if not (0 <= key2 < self.MAX_KEY2) or not (0 <= key1 < self.MAX_KEY2):
                     raise RuntimeError(f"第{excel_row}行 key1/key2 超出允许范围，要求 0 <= key < {self.MAX_KEY2}")
-
                 row_data_key = key1 * self.MULTIPLIER + key2
             else:
                 # 单列 int 主键（第一列）
@@ -293,15 +302,21 @@ class WorksheetData:
                     excel_row = row_idx + 7
                     raise RuntimeError(f"第{excel_row}行的主键无法转换为 int: {row[0].value}")
 
+                # 第一列字段名不是 id，则打印一次性警告（并在下方把 id 填入）
+                if (isinstance(first_field_real_name, str)
+                    and first_field_real_name.strip().lower() != "id"
+                    and not self.first_int_pk_not_named_id_warned):
+                    log_warn(f"表 [{self.name}] 的第一列为 int 且被视作主键，但字段名不是 'id'。"
+                        f" 已将该值写入每条记录的 'id' 属性。建议将第一列字段名改为 'id'。")
+                    self.first_int_pk_not_named_id_warned = True
+
             # 填充行字段（列索引从 1 开始对应 field_names[1]）
             for col_index, cell in enumerate(row, start=1):
                 data_label = self.data_labels[col_index]
-
                 if data_label == "ignore":
                     continue
 
                 default_value = self.default_values[col_index]
-                # 使用真实字段名（如果带了 key1:/key2 前缀则去掉前缀）
                 data_name = self._actual_field_name(col_index)
                 data_type_str = self.data_types[col_index]
 
@@ -315,11 +330,18 @@ class WorksheetData:
 
                 row_data[data_name] = value
 
+            # ⭐ 关键：把正确的 id 写入记录，覆盖/补齐为主键对应的 int 值
+            # - 字符串枚举：row_data_key 是序号（也是生成的枚举值）
+            # - 组合键：row_data_key 是合成 id
+            # - 单列 int：row_data_key 就是主键
+            row_data["id"] = int(row_data_key)
+
             data[row_data_key] = row_data
 
         file_content = json.dumps(data, ensure_ascii=False, indent=4)
         file_path = f"{output_folder}/{self.name}Config.json"
         write_to_file(file_content, file_path)
+
 
     def generate_script(self, output_folder: str) -> None:
         """
