@@ -1,17 +1,20 @@
 # Author: huhongwei 306463233@qq.com
-# Created: 2024-09-10 (updated)
 # MIT License
-# All rights reserved
-
 import json
-from typing import Any, Dict, List, Optional
-from collections import defaultdict
 import re
+from typing import Any, Dict, List
+from collections import defaultdict
 
-from cs_generation import generate_script_file, generate_enum_file, write_to_file
+from cs_generation import generate_script_file, generate_enum_file
 from excel_processing import read_cell_values, check_repeating_values
 from data_processing import convert_to_type, available_csharp_enum_name
-from log import log_warn
+from log import log_warn, log_error
+from exceptions import (
+    InvalidEnumNameError,
+    DuplicatePrimaryKeyError,
+    CompositeKeyOverflowError,
+)
+from naming_config import JSON_FILE_PATTERN, ENUM_KEYS_SUFFIX, JSON_SORT_KEYS, JSON_ID_FIRST
 
 
 class WorksheetData:
@@ -179,7 +182,7 @@ class WorksheetData:
     def _validate_enum_name(self, name: str, excel_row: int) -> None:
         """检查枚举名是否合法（excel_row 为真实 Excel 行号，用于错误提示）"""
         if not available_csharp_enum_name(name):
-            raise RuntimeError(f"第{excel_row}行第1列的值 {name} 不是合法的C#枚举名，无法生成主键！")
+            raise InvalidEnumNameError(name, excel_row)
 
     def _check_duplicate_enum_keys(self) -> None:
         """
@@ -187,19 +190,18 @@ class WorksheetData:
         - 验证每个名字是否合法
         - 收集出现的 Excel 行号，若重复则抛错（显示真实 Excel 行号）
         """
-        name_to_rows = defaultdict(list)
+        name_rows = defaultdict(list)
         for idx, row in enumerate(self.row_data):
-            excel_row = idx + 7  # 数据从 Excel 第 7 行开始
-            first_cell_value = row[0].value
-            self._validate_enum_name(first_cell_value, excel_row)
-            name_to_rows[first_cell_value].append(excel_row)
-
-        duplicates = {name: rows for name, rows in name_to_rows.items() if len(rows) > 1}
-        if duplicates:
-            dup_msgs = []
-            for name, rows in duplicates.items():
-                dup_msgs.append(f"'{name}' 出现在行 {rows}")
-            raise RuntimeError("发现重复的字符串主键（将用于生成枚举），请修正后重试：\n" + "\n".join(dup_msgs))
+            if not row:
+                continue
+            val = row[0].value
+            excel_row = 7 + idx
+            self._validate_enum_name(val, excel_row)
+            name_rows[val].append(excel_row)
+        dup = {k: v for k, v in name_rows.items() if len(v) > 1}
+        if dup:
+            lines = "; ".join(f"{k} -> 行{v}" for k, v in dup.items())
+            raise InvalidEnumNameError(f"重复的字符串主键: {lines}", -1)
 
     def _check_duplicate_composite_keys(self) -> None:
         """
@@ -207,59 +209,38 @@ class WorksheetData:
         - 检查 key1/key2 是否为整数、是否在允许范围内
         - 检查组合后的 combined 是否唯一（若重复则抛错并显示真实 Excel 行号，及对应实际 (key1,key2)）
         """
-        if not self.composite_keys:
-            return
-
-        combined_to_rows = defaultdict(list)
+        seen = {}
         for idx, row in enumerate(self.row_data):
-            excel_row = idx + 7
-            # key1 对应 row[0]，key2 对应 row[1]
+            if len(row) < 2:
+                continue
+            k1 = row[0].value
+            k2 = row[1].value
+            excel_row = 7 + idx
+            if k1 is None or k2 is None:
+                raise RuntimeError(f"行{excel_row} key1/key2 为空")
             try:
-                key1_cell = row[0].value
-                key2_cell = row[1].value
-            except IndexError:
-                raise RuntimeError(f"第{excel_row}行无法读取 key1/key2（索引越界）")
-
-            if key1_cell is None or key2_cell is None:
-                raise RuntimeError(f"第{excel_row}行的 key1/key2 为空，无法作为组合主键。")
-
-            try:
-                key1 = int(key1_cell)
-                key2 = int(key2_cell)
+                i1 = int(k1); i2 = int(k2)
             except Exception:
-                raise RuntimeError(f"第{excel_row}行 key1 或 key2 不能转换为 int (key1={key1_cell}, key2={key2_cell})")
-
-            # 范围检查：要求 0 <= key2 < MAX_KEY2；同时限制 key1 在相同范围（可调整）
-            if not (0 <= key2 < self.MAX_KEY2):
-                raise RuntimeError(f"第{excel_row}行的 key2={key2} 超出允许范围。要求 0 <= key2 < {self.MAX_KEY2}")
-            if not (0 <= key1 < self.MAX_KEY2):
-                raise RuntimeError(f"第{excel_row}行的 key1={key1} 超出允许范围。要求 0 <= key1 < {self.MAX_KEY2}")
-
-            combined = key1 * self.MULTIPLIER + key2
-            combined_to_rows[combined].append((excel_row, key1, key2))
-
-        duplicates = {c: rows for c, rows in combined_to_rows.items() if len(rows) > 1}
-        if duplicates:
-            dup_msgs = []
-            for c, rows in duplicates.items():
-                # 列出每个重复组合对应的行和原始 (key1,key2)
-                rows_desc = ", ".join([f"(row {r[0]} -> ({r[1]},{r[2]}))" for r in rows])
-                dup_msgs.append(f"组合值 {c} 对应的行: {rows_desc}")
-            raise RuntimeError("发现重复的组合主键，请修正后重试：\n" + "\n".join(dup_msgs))
+                raise RuntimeError(f"行{excel_row} key1/key2 不是整数: {k1},{k2}")
+            combined = i1 * self.MULTIPLIER + i2
+            if combined in seen:
+                raise DuplicatePrimaryKeyError(combined, seen[combined], excel_row)
+            seen[combined] = excel_row
 
     def _generate_enum_keys_csfile(self, output_folder: str) -> None:
         """当需要 string 枚举键时才调用（保留原有实现）"""
-        enum_type_name = f"{self.name}Keys"
-        enum_names: List[str] = []
-        enum_values: List[int] = []
-
-        for index, row in enumerate(self.row_data):
-            first_cell_value = row[0].value
-            # 防御性检查（用真实 Excel 行号作为提示）
-            self._validate_enum_name(first_cell_value, index + 7)
-            enum_names.append(first_cell_value)
-            enum_values.append(index)
-
+        enum_type_name = f"{self.name}{ENUM_KEYS_SUFFIX}"
+        enum_names = []
+        enum_values = []
+        idx_val = 0
+        for idx, row in enumerate(self.row_data):
+            if not row:
+                continue
+            val = row[0].value
+            self._validate_enum_name(val, 7 + idx)
+            enum_names.append(val)
+            enum_values.append(idx_val)
+            idx_val += 1
         generate_enum_file(enum_type_name, enum_names, enum_values, None, "Data.TableScript", output_folder)
 
     def generate_json(self, output_folder: str) -> None:
@@ -271,77 +252,94 @@ class WorksheetData:
         """
         data: Dict[Any, Dict[str, Any]] = {}
         serial_key = 0
-
-        # 预取“第一列真实字段名”，用来判断是否叫 id
-        first_field_real_name = self._actual_field_name(1) if len(self.field_names) > 1 else None
-
+        first_real = self._actual_field_name(1) if len(self.field_names) > 1 else None
+        used_keys = {}
         for row_idx, row in enumerate(self.row_data):
-            row_data = {}
-
+            if not row:
+                continue
+            excel_row = 7 + row_idx
             # 处理主键
             if self.need_generate_keys:
                 # 使用自增 serial（枚举）
-                row_data_key = serial_key
+                row_key = serial_key
                 serial_key += 1
             elif self.composite_keys:
                 # 组合键：取数据前两列 row[0], row[1]
-                excel_row = row_idx + 7
                 try:
-                    key1 = int(row[0].value)
-                    key2 = int(row[1].value)
+                    k1 = int(row[0].value)
+                    k2 = int(row[1].value)
                 except Exception:
-                    raise RuntimeError(f"第{excel_row}行无法解析 key1/key2 为 int（请检查数据）")
-                if not (0 <= key2 < self.MAX_KEY2) or not (0 <= key1 < self.MAX_KEY2):
-                    raise RuntimeError(f"第{excel_row}行 key1/key2 超出允许范围，要求 0 <= key < {self.MAX_KEY2}")
-                row_data_key = key1 * self.MULTIPLIER + key2
+                    raise RuntimeError(f"行{excel_row} 无法解析组合键 int")
+                if not (0 <= k1 < self.MAX_KEY2 and 0 <= k2 < self.MAX_KEY2):
+                    raise RuntimeError(f"行{excel_row} 组合键超范围 0~{self.MAX_KEY2-1}")
+                row_key = k1 * self.MULTIPLIER + k2
+                if row_key >= 2**31:
+                    raise CompositeKeyOverflowError(row_key)
             else:
                 # 单列 int 主键（第一列）
                 try:
-                    row_data_key = int(row[0].value)
+                    row_key = int(row[0].value)
                 except Exception:
-                    excel_row = row_idx + 7
-                    raise RuntimeError(f"第{excel_row}行的主键无法转换为 int: {row[0].value}")
+                    raise RuntimeError(f"行{excel_row} 主键非 int: {row[0].value}")
 
                 # 第一列字段名不是 id，则打印一次性警告（并在下方把 id 填入）
-                if (isinstance(first_field_real_name, str)
-                    and first_field_real_name.strip().lower() != "id"
-                    and not self.first_int_pk_not_named_id_warned):
-                    log_warn(f"表 [{self.name}] 的第一列为 int 且被视作主键，但字段名不是 'id'。"
-                        f" 已将该值写入每条记录的 'id' 属性。建议将第一列字段名改为 'id'。")
+                if (isinstance(first_real, str)
+                        and first_real.lower() != "id"
+                        and not self.first_int_pk_not_named_id_warned):
+                    log_warn(f"表[{self.name}] 第一列视为主键但字段名不是 id，已写入 id 属性。建议修改表头。")
                     self.first_int_pk_not_named_id_warned = True
+            if row_key in used_keys:
+                raise DuplicatePrimaryKeyError(row_key, used_keys[row_key], excel_row)
+            used_keys[row_key] = excel_row
 
-            # 填充行字段（列索引从 1 开始对应 field_names[1]）
+            # 保持列顺序：按 Excel 顺序构建
+            if JSON_ID_FIRST:
+                # 先放 id，后续如果 Excel 本身有 id 列会覆盖同值但顺序仍保持在第一
+                row_obj = {"id": int(row_key)}
+            else:
+                row_obj = {}
+
             for col_index, cell in enumerate(row, start=1):
-                data_label = self.data_labels[col_index]
-                if data_label == "ignore":
+                if col_index >= len(self.field_names):
                     continue
-
-                default_value = self.default_values[col_index]
+                if self.data_labels[col_index] == "ignore":
+                    continue
                 data_name = self._actual_field_name(col_index)
-                data_type_str = self.data_types[col_index]
-
+                type_str = self.data_types[col_index]
+                default_value = self.default_values[col_index]
                 cell_value = cell.value
                 if cell_value is None:
-                    if default_value is None and data_label == "required":
-                        raise RuntimeError(f"{data_name} 的label为 required，但值为空且没有默认值")
-                    value = convert_to_type(data_type_str, default_value)
+                    if default_value is None and self.data_labels[col_index] == "required":
+                        raise RuntimeError(f"{data_name} required 但值为空且无默认值 (行{excel_row})")
+                    try:
+                        value = convert_to_type(type_str, default_value)
+                    except Exception as e:
+                        log_error(f"{self.name} 行{excel_row} 字段 {data_name} 默认值转换失败: {e}")
+                        value = None
                 else:
-                    value = convert_to_type(data_type_str, cell_value)
+                    try:
+                        value = convert_to_type(type_str, cell_value)
+                    except Exception as e:
+                        log_error(f"{self.name} 行{excel_row} 字段 {data_name} 转换失败: {e}")
+                        value = None
+                row_obj[data_name] = value
 
-                row_data[data_name] = value
+            if not JSON_ID_FIRST:
+                # 保证存在 id（末尾追加）
+                row_obj["id"] = int(row_key)
 
-            # ⭐ 关键：把正确的 id 写入记录，覆盖/补齐为主键对应的 int 值
-            # - 字符串枚举：row_data_key 是序号（也是生成的枚举值）
-            # - 组合键：row_data_key 是合成 id
-            # - 单列 int：row_data_key 就是主键
-            row_data["id"] = int(row_data_key)
+            data[row_key] = row_obj
 
-            data[row_data_key] = row_data
-
-        file_content = json.dumps(data, ensure_ascii=False, indent=4)
-        file_path = f"{output_folder}/{self.name}Config.json"
+        file_content = json.dumps(
+            data,
+            ensure_ascii=False,
+            indent=4,
+            sort_keys=JSON_SORT_KEYS  # 使用配置项
+        )
+        import os
+        from cs_generation import write_to_file
+        file_path = os.path.join(output_folder, JSON_FILE_PATTERN.format(name=self.name))
         write_to_file(file_content, file_path)
-
 
     def generate_script(self, output_folder: str) -> None:
         """
@@ -349,23 +347,17 @@ class WorksheetData:
         会把 composite_keys 与 MULTIPLIER 及 composite_key_fields 传给 cs 生成器，
         以便生成的 C# 方法使用真实字段名作为参数名。
         """
-        properties_dict = self._get_properties_dict()
-        property_remakes = self._get_property_remarks()
-
-        # 传递 composite_key_fields（若启用）给 cs 生成器，以便在 C# 中使用真实字段名（例如 id, group）
-        composite_fields = self.composite_key_fields if self.composite_keys else None
-
+        props = self._get_properties_dict()
+        remarks = self._get_property_remarks()
         generate_script_file(
             self.name,
-            properties_dict,
-            property_remakes,
+            props,
+            remarks,
             output_folder,
             self.need_generate_keys,
             composite_keys=self.composite_keys,
             composite_multiplier=self.MULTIPLIER,
-            composite_key_fields=composite_fields  # 可能为 None 或 {"key1":"id","key2":"group"}
+            composite_key_fields=self.composite_key_fields if self.composite_keys else None
         )
-
-        # 如果需要字符串枚举键，生成对应的枚举文件
         if self.need_generate_keys:
             self._generate_enum_keys_csfile(output_folder)

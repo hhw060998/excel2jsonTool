@@ -1,6 +1,7 @@
 {
     "46341": {
         "id": 46341,
+        "level": 1,
         "group": 1,
         "damage": 10,
         "damage_increase": 0.5,

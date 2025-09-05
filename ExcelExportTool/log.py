@@ -1,4 +1,4 @@
-# ANSI escape sequences for colors
+# ANSI escape sequences for colors (保持原风格)
 GREEN = '\033[92m'
 RED = '\033[91m'
 YELLOW = '\033[93m'
@@ -19,3 +19,11 @@ def log_error(msg: str) -> None:
 
 def log_success(msg: str) -> None:
     print(f"{GREEN}{msg}{RESET}")
+
+
+def log_sep(title: str = ""):
+    line = "─" * 56
+    if title:
+        log_info(f"{line} {title} {line}")
+    else:
+        log_info(line * 2)
