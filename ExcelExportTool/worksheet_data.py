@@ -8,13 +8,16 @@ from collections import defaultdict
 from cs_generation import generate_script_file, generate_enum_file
 from excel_processing import read_cell_values, check_repeating_values
 from data_processing import convert_to_type, available_csharp_enum_name
-from log import log_warn, log_error
+from log import log_warn, log_error, log_info
 from exceptions import (
     InvalidEnumNameError,
     DuplicatePrimaryKeyError,
     CompositeKeyOverflowError,
 )
 from naming_config import JSON_FILE_PATTERN, ENUM_KEYS_SUFFIX, JSON_SORT_KEYS, JSON_ID_FIRST
+
+# 新增：可选字段统计开关（保持功能不变，默认打印一次汇总；若不需要可改为 False）
+_PRINT_FIELD_SUMMARY = True
 
 
 class WorksheetData:
@@ -39,12 +42,11 @@ class WorksheetData:
     def __init__(self, worksheet) -> None:
         self.name: str = worksheet.title
         self.worksheet = worksheet
-
-        # cell_values 的索引遵循原来约定：1..6 分别为 remarks, headers, data_types, data_labels, field_names, default_values
+        # 一致性：行长度校验（字段行与类型行长度不一致提前报错）
+        # 读取 1..6 行
         self.cell_values: Dict[int, List[Any]] = {
             i: read_cell_values(worksheet, i) for i in range(1, 7)
         }
-
         self.remarks = self.cell_values[1]
         self.headers = self.cell_values[2]
         self.data_types = self.cell_values[3]
@@ -52,30 +54,52 @@ class WorksheetData:
         self.field_names = self.cell_values[5]
         self.default_values = self.cell_values[6]
 
-        # 数据行：从 Excel 第 7 行开始，且最左列从第2列开始读取（与你原来实现一致）
+        if len(self.data_types) != len(self.field_names):
+            raise RuntimeError(
+                f"字段行数量与类型行数量不一致: fields={len(self.field_names)}, types={len(self.data_types)}"
+            )
+        if len(self.data_labels) != len(self.field_names):
+            raise RuntimeError(
+                f"字段行数量与标签行数量不一致: fields={len(self.field_names)}, labels={len(self.data_labels)}"
+            )
+        if len(self.default_values) != len(self.field_names):
+            # 不强制报错，只警告
+            log_warn(
+                f"默认值列数量与字段列数量不一致: fields={len(self.field_names)}, defaults={len(self.default_values)}"
+            )
+
+        # 数据行
         self.row_data = list(worksheet.iter_rows(min_row=7, min_col=2))
 
-        # 保持原有的字段重复检查（针对 field_names）
+        # 重复字段检测
         check_repeating_values(self.field_names)
 
-        # 原有逻辑判断是否需要生成字符串枚举 key
+        # 统计(仅用于汇总日志）
+        self._field_total = len(self.field_names) - 1 if len(self.field_names) > 0 else 0  # 去掉首列主键列
+        self._ignore_count = sum(1 for i in range(len(self.field_names)) if self.data_labels[i] == "ignore")
+        self._required_fields = {i for i in range(len(self.field_names)) if self.data_labels[i] == "required"}
+
+        # 检测是否存在有效数据（至少一行中出现非空且未 ignore 的单元格）
+        self._has_effective_data = self._check_has_effective_data()
+
         self.need_generate_keys = self._need_generate_keys()
-
-        # 解析组合键配置（要求出现在 field_names 的前两列，并采用 key1:xxx / key2:yyy 格式）
         self.composite_keys = False
-        self.composite_key_fields: Dict[str, str] = {}  # e.g. {"key1": "id", "key2": "group"}
+        self.composite_key_fields: Dict[str, str] = {}
         self._detect_composite_keys_with_prefixes_in_first_two_columns()
-
-        # 如果需要生成字符串枚举键（原逻辑），初始化时做合法性与重复检查
         if self.need_generate_keys:
             self._check_duplicate_enum_keys()
-
-        # 如果检测到组合键配置，则在初始化阶段检查 key1/key2 的合法性、范围与组合唯一性
         if self.composite_keys:
             self._check_duplicate_composite_keys()
-            
-        # 当使用单列 int 主键但第一列字段名不是 id 时，记录标志并准备一次性警告
         self.first_int_pk_not_named_id_warned = False
+
+        if not self._has_effective_data:
+            log_warn(f"表[{self.name}] 没有有效数据行（将生成空 JSON）。")
+
+        if _PRINT_FIELD_SUMMARY:
+            log_info(
+                f"[{self.name}] 字段统计: 总列={len(self.field_names)} 可用列(含主键)={len(self.field_names)} "
+                f"ignore列={self._ignore_count} required列={len(self._required_fields)}"
+            )
 
     def _need_generate_keys(self) -> bool:
         """判断是否需要为数据行生成自增 key（原逻辑）"""
@@ -243,6 +267,23 @@ class WorksheetData:
             idx_val += 1
         generate_enum_file(enum_type_name, enum_names, enum_values, None, "Data.TableScript", output_folder)
 
+    def _check_has_effective_data(self) -> bool:
+        """
+        检查是否至少存在一行包含至少一个非 ignore 且非空的单元格。
+        不改变现有生成逻辑，仅用于日志提示。
+        """
+        if not self.row_data:
+            return False
+        for row in self.row_data:
+            for col_index, cell in enumerate(row, start=1):
+                if col_index >= len(self.field_names):
+                    continue
+                if self.data_labels[col_index] == "ignore":
+                    continue
+                if cell.value not in (None, ""):
+                    return True
+        return False
+
     def generate_json(self, output_folder: str) -> None:
         """将表格数据导出为 JSON 文件（支持单列 int 主键 / 自动生成键 / 以及组合键）。
         这里同时确保给每条记录填充 info.id：
@@ -254,17 +295,19 @@ class WorksheetData:
         serial_key = 0
         first_real = self._actual_field_name(1) if len(self.field_names) > 1 else None
         used_keys = {}
+
+        # 新增：统计 required 缺失次数（虽然缺失会抛错，此计数主要用于未来扩展；保持现功能）
+        required_missing_count = 0
+
         for row_idx, row in enumerate(self.row_data):
             if not row:
                 continue
             excel_row = 7 + row_idx
             # 处理主键
             if self.need_generate_keys:
-                # 使用自增 serial（枚举）
                 row_key = serial_key
                 serial_key += 1
             elif self.composite_keys:
-                # 组合键：取数据前两列 row[0], row[1]
                 try:
                     k1 = int(row[0].value)
                     k2 = int(row[1].value)
@@ -276,25 +319,22 @@ class WorksheetData:
                 if row_key >= 2**31:
                     raise CompositeKeyOverflowError(row_key)
             else:
-                # 单列 int 主键（第一列）
                 try:
                     row_key = int(row[0].value)
                 except Exception:
                     raise RuntimeError(f"行{excel_row} 主键非 int: {row[0].value}")
-
-                # 第一列字段名不是 id，则打印一次性警告（并在下方把 id 填入）
                 if (isinstance(first_real, str)
                         and first_real.lower() != "id"
                         and not self.first_int_pk_not_named_id_warned):
                     log_warn(f"表[{self.name}] 第一列视为主键但字段名不是 id，已写入 id 属性。建议修改表头。")
                     self.first_int_pk_not_named_id_warned = True
+
             if row_key in used_keys:
                 raise DuplicatePrimaryKeyError(row_key, used_keys[row_key], excel_row)
             used_keys[row_key] = excel_row
 
             # 保持列顺序：按 Excel 顺序构建
             if JSON_ID_FIRST:
-                # 先放 id，后续如果 Excel 本身有 id 列会覆盖同值但顺序仍保持在第一
                 row_obj = {"id": int(row_key)}
             else:
                 row_obj = {}
@@ -308,38 +348,46 @@ class WorksheetData:
                 type_str = self.data_types[col_index]
                 default_value = self.default_values[col_index]
                 cell_value = cell.value
+
+                # 截断原始值用于日志
+                def _short(v, limit=60):
+                    s = str(v)
+                    return s if len(s) <= limit else s[:limit] + "..."
+
                 if cell_value is None:
                     if default_value is None and self.data_labels[col_index] == "required":
+                        required_missing_count += 1
                         raise RuntimeError(f"{data_name} required 但值为空且无默认值 (行{excel_row})")
                     try:
                         value = convert_to_type(type_str, default_value)
                     except Exception as e:
-                        log_error(f"{self.name} 行{excel_row} 字段 {data_name} 默认值转换失败: {e}")
+                        log_error(f"{self.name} 行{excel_row} 字段 {data_name} 默认值转换失败 原值[{_short(default_value)}]: {e}")
                         value = None
                 else:
                     try:
                         value = convert_to_type(type_str, cell_value)
                     except Exception as e:
-                        log_error(f"{self.name} 行{excel_row} 字段 {data_name} 转换失败: {e}")
+                        log_error(f"{self.name} 行{excel_row} 字段 {data_name} 转换失败 原值[{_short(cell_value)}]: {e}")
                         value = None
                 row_obj[data_name] = value
 
             if not JSON_ID_FIRST:
-                # 保证存在 id（末尾追加）
                 row_obj["id"] = int(row_key)
-
             data[row_key] = row_obj
 
         file_content = json.dumps(
             data,
             ensure_ascii=False,
             indent=4,
-            sort_keys=JSON_SORT_KEYS  # 使用配置项
+            sort_keys=JSON_SORT_KEYS
         )
         import os
         from cs_generation import write_to_file
         file_path = os.path.join(output_folder, JSON_FILE_PATTERN.format(name=self.name))
         write_to_file(file_content, file_path)
+
+        if _PRINT_FIELD_SUMMARY:
+            log_info(f"[{self.name}] 导出完成: 行数={len(data)} required缺失={required_missing_count}")
 
     def generate_script(self, output_folder: str) -> None:
         """

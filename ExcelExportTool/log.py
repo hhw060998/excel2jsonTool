@@ -22,8 +22,13 @@ def log_success(msg: str) -> None:
 
 
 def log_sep(title: str = ""):
-    line = "─" * 56
+    line = "─" * 10
     if title:
         log_info(f"{line} {title} {line}")
     else:
         log_info(line * 2)
+
+
+# 新增：文件名高亮（Excel 文件名统一使用绿色）
+def green_filename(name: str) -> str:
+    return f"{GREEN}{name}{RESET}"

@@ -5,8 +5,8 @@ import openpyxl
 from pathlib import Path
 from typing import Optional
 from worksheet_data import WorksheetData
-from cs_generation import generate_enum_file_from_sheet, get_create_files, set_output_options
-from log import log_info, log_warn, log_error, log_success, log_sep
+from cs_generation import generate_enum_file_from_sheet, get_created_files, set_output_options
+from log import log_info, log_warn, log_error, log_success, log_sep, green_filename
 from exceptions import SheetNameConflictError, ExportError
 
 def process_excel_file(
@@ -20,14 +20,14 @@ def process_excel_file(
     try:
         wb = openpyxl.load_workbook(str(excel_path), data_only=True)
     except Exception as e:
-        log_error(f"打开失败: {excel_path} -> {e}")
+        log_error(f"打开失败: {green_filename(excel_path.name)} -> {e}")
         return
     main_sheet = wb.worksheets[0]
     if main_sheet.title in file_sheet_map.values():
         dup = next(f for f, s in file_sheet_map.items() if s == main_sheet.title)
         raise SheetNameConflictError(main_sheet.title, dup, excel_path.name)
 
-    log_sep(f"开始 {excel_path.name}")
+    log_sep(f"开始 {green_filename(excel_path.name)}")
     main_sheet_data = WorksheetData(main_sheet)
 
     if output_client_folder:
@@ -44,10 +44,10 @@ def process_excel_file(
                 generate_enum_file_from_sheet(sheet, enum_tag, enum_output_folder)
 
     file_sheet_map[excel_path.name] = main_sheet.title
-    log_info(f"完成处理: {excel_path.name}")
+    log_info(f"完成 {excel_path.name} \n")
 
 def cleanup_files(output_folders):
-    created = set(get_create_files())
+    created = set(get_created_files())
     from pathlib import Path
     stale = []
     for folder in filter(None, output_folders):
@@ -100,7 +100,7 @@ def batch_excel_to_json(
 
     for excel_path in excel_files:
         if not excel_path.name[0].isupper():
-            log_warn(f"跳过(首字母非大写): {excel_path.name}")
+            log_warn(f"跳过(首字母非大写): {green_filename(excel_path.name)}")
             skip += 1
             continue
         try:
@@ -114,11 +114,11 @@ def batch_excel_to_json(
             )
             ok += 1
         except SheetNameConflictError as e:
-            log_error(str(e))
+            log_error(f"{green_filename(excel_path.name)} 冲突: {e}")
         except ExportError as e:
-            log_error(f"{excel_path.name} 失败: {e}")
+            log_error(f"{green_filename(excel_path.name)} 失败: {e}")
         except Exception as e:
-            log_error(f"{excel_path.name} 未知错误: {e}")
+            log_error(f"{green_filename(excel_path.name)} 未知错误: {e}")
 
     if auto_cleanup:
         log_sep("清理阶段")
