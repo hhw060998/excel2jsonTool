@@ -359,13 +359,13 @@ class WorksheetData:
                         required_missing_count += 1
                         raise RuntimeError(f"{data_name} required 但值为空且无默认值 (行{excel_row})")
                     try:
-                        value = convert_to_type(type_str, default_value)
+                        value = convert_to_type(type_str, default_value, data_name, self.name)
                     except Exception as e:
                         log_error(f"{self.name} 行{excel_row} 字段 {data_name} 默认值转换失败 原值[{_short(default_value)}]: {e}")
                         value = None
                 else:
                     try:
-                        value = convert_to_type(type_str, cell_value)
+                        value = convert_to_type(type_str, cell_value, data_name, self.name)
                     except Exception as e:
                         log_error(f"{self.name} 行{excel_row} 字段 {data_name} 转换失败 原值[{_short(cell_value)}]: {e}")
                         value = None

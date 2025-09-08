@@ -4,7 +4,9 @@
 # All rights reserved
 
 import re
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
+from exceptions import UnknownCustomTypeError, CustomTypeParseError
+from log import log_warn
 
 # 基本类型映射
 PRIMITIVE_TYPE_MAPPING: Dict[str, Callable[[Any], Any]] = {
@@ -15,25 +17,93 @@ PRIMITIVE_TYPE_MAPPING: Dict[str, Callable[[Any], Any]] = {
     "string": str,  # 兼容别名
 }
 
+# ================= 自定义类型注册机制 =================
+class _CustomTypeHandler:
+    def __init__(self, parser: Callable[[Optional[str]], Any]):
+        self.parser = parser
+
+class CustomTypeRegistry:
+    def __init__(self):
+        self._handlers: Dict[str, _CustomTypeHandler] = {}
+
+    def register(self, full_name: str, parser: Callable[[Optional[str]], Any]):
+        self._handlers[full_name] = _CustomTypeHandler(parser)
+
+    def parse(self, full_name: str, raw: Any, field: str | None = None, sheet: str | None = None):
+        h = self._handlers.get(full_name)
+        if not h:
+            raise UnknownCustomTypeError(full_name, field, sheet)
+        try:
+            return h.parser(None if raw is None else str(raw))
+        except Exception as e:
+            raise CustomTypeParseError(full_name, str(raw), str(e), field, sheet)
+
+    def contains(self, full_name: str) -> bool:
+        return full_name in self._handlers
+
+    def all_types(self):
+        return list(self._handlers.keys())
+
+custom_type_registry = CustomTypeRegistry()
+
+# 是否启用未注册自定义类型的通用回退解析
+GENERIC_CUSTOM_TYPE_FALLBACK = True
+
+def _generic_custom_type_object(full_name: str, raw: Optional[str]):
+    """通用自定义类型打包：按 '#' 切分为 segments，保留原串。
+    JSON 结构: {"__type": full_name, "__raw": original, "segments": [..]}
+    空值 -> {"__type": full_name, "segments": []}
+    """
+    if raw is None or raw == "":
+        return {"__type": full_name, "segments": []}
+    txt = raw.replace("\r\n", "\n")
+    parts = [p.strip() for p in txt.split('#')]
+    return {"__type": full_name, "__raw": txt, "segments": parts}
+
+def _parse_localized_string_ref(raw: Optional[str]):
+    """默认示例: Localization.LocalizedStringRef 形如 文本#上下文 (#可省)."""
+    if raw is None or raw == "":
+        return {"keyHash": 0, "source": "", "context": ""}
+    txt = raw.replace("\r\n", "\n")
+    if "#" in txt:
+        src, ctx = txt.split("#", 1)
+    else:
+        src, ctx = txt, ""
+    src = src.strip(); ctx = ctx.strip()
+    return {"keyHash": 0, "source": src, "context": ctx}
+
+# 注册示例（可通过外部扩展继续添加）
+custom_type_registry.register("Localization.LocalizedStringRef", _parse_localized_string_ref)
+# =====================================================
+
 
 def available_csharp_enum_name(name: str) -> bool:
     """检查是否为合法的C#枚举名"""
     return bool(re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", str(name)))
 
 
-def convert_to_type(type_str: str, value: Any) -> Any:
-    """根据类型字符串转换值"""
+def convert_to_type(type_str: str, value: Any, field: str | None = None, sheet: str | None = None) -> Any:
+    """根据类型字符串转换值 (支持基础/list/dict/自定义全限定类型)"""
+    if not type_str:
+        raise ValueError("空类型定义")
     type_str = type_str.strip()
 
+    # 基础
     if type_str in PRIMITIVE_TYPE_MAPPING:
         return _convert_primitive(type_str, value)
-
+    # 容器
     if type_str.startswith("dict"):
         return _convert_dict(type_str, value)
-
     if type_str.startswith("list"):
         return _convert_list(type_str, value)
-
+    # 自定义(简单策略: 至少包含一个 . 视为全限定类型)
+    if "." in type_str:
+        if custom_type_registry.contains(type_str):
+            return custom_type_registry.parse(type_str, value, field, sheet)
+        if GENERIC_CUSTOM_TYPE_FALLBACK:
+            return _generic_custom_type_object(type_str, None if value is None else str(value))
+        # 未开启通用回退仍旧报错
+        raise UnknownCustomTypeError(type_str, field, sheet)
     raise ValueError(f"Unsupported data type: {type_str}")
 
 
