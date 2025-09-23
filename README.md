@@ -109,6 +109,25 @@ ProjectFolder/          # 目标工程侧示例（C#、JSON 输出示例）
 
 ---
 
+## 引用检查（新功能）
+
+- 语法：在“字段名”前添加前缀 `[Sheet/Field]` 或 `[Sheet]`，方括号后的部分是“真实字段名”。
+	- `[RefExample]ref_id` 等价于 `[RefExample/id]ref_id`（省略字段名默认引用 `id` 列）。
+	- `[RefExample/id]ref_id` 显式引用 `RefExample` 表的 `id` 列。
+- 检查时机：导出完所有 JSON 后统一进行（避免导出顺序依赖）。
+- 检查内容：
+	- 存在性：该字段的取值必须出现在目标表的被引用列中；否则打印错误（不终止导表）。
+	- 类型匹配：该字段声明的基础类型需与被引用列的基础类型一致（`int/float/string/bool`）。
+	- 列表类型：`list(T)` 将逐元素进行类型与存在性校验。
+	- 字典类型：若标注了引用，将打印一次警告并跳过检查（包含两种类型暂不处理）。
+- 找不到目标表 JSON：打印警告并跳过该引用检查。
+
+示例：在 `SampleConfig` 表的 `ref_id` 字段填写 `[RefExample]ref_id`，表示该字段的值来源于 `RefExample` 表的第一数据列（默认 `id`）。
+
+日志说明：以上错误/警告均不终止导表，便于一次性定位所有问题。
+
+---
+
 ## 常见校验与错误
 
 - 重复字段、重复 Sheet → 导出报错并定位。
@@ -277,6 +296,25 @@ If you registered a dedicated parser for `Localization.LocalizedStringRef`:
 - Custom types:
 	- With generic fallback: any fully qualified type can export; parse errors preserve the raw string in logs.
 	- If fallback is disabled: unregistered types cause errors for stricter enforcement.
+
+---
+
+## Reference Checks (New)
+
+- Syntax: add a prefix before the field name — `[Sheet/Field]` or `[Sheet]`; the part after `]` is the actual field name.
+	- `[RefExample]ref_id` equals `[RefExample/id]ref_id` (omitted field defaults to `id`).
+	- `[RefExample/id]ref_id` explicitly references column `id` in `RefExample`.
+- Timing: performed after all JSON files are exported (order-independent).
+- What is validated:
+	- Existence: the referencing value must exist in the target column; otherwise an error is logged (export continues).
+	- Type match: the declared base type must match the target column base type (`int/float/string/bool`).
+	- Lists: `list(T)` validates each element for both type and existence.
+	- Dictionaries: if a dictionary field is annotated with a reference, a warning is logged and the check is skipped (two-type case not handled yet).
+- Missing target JSON: logs a warning and skips that check.
+
+Example: in sheet `SampleConfig`, `[RefExample]ref_id` means this field references the first data column of `RefExample` (defaults to `id`).
+
+Notes: errors/warnings do not stop the export, allowing you to fix all issues in one pass.
 
 ## C# Integration Tips
 

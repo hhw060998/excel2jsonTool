@@ -42,6 +42,10 @@ namespace Data.TableScript
 		/// <summary> 字典-字符串:浮点 </summary>
 		[JsonProperty("dict_values2")]
 		public Dictionary<string,float> dict_values2 { get; private set; }
+		
+		/// <summary> 引用示例: 也可以加[RefExample]，这样会选择第一列非空数据 </summary>
+		[JsonProperty("ref_id")]
+		public int ref_id { get; private set; }
 	}
 	
 	/// <summary>

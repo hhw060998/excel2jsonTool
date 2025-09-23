@@ -2,7 +2,8 @@
 # MIT License
 import json
 import re
-from typing import Any, Dict, List
+import os
+from typing import Any, Dict, List, Optional, Tuple
 from collections import defaultdict
 
 from cs_generation import generate_script_file, generate_enum_file
@@ -38,6 +39,8 @@ class WorksheetData:
 
     KEY1_PREFIX_RE = re.compile(r"^\s*key1\s*:\s*(?P<name>.+)\s*$", re.IGNORECASE)
     KEY2_PREFIX_RE = re.compile(r"^\s*key2\s*:\s*(?P<name>.+)\s*$", re.IGNORECASE)
+    # [Sheet/Field]FieldName 或 [Sheet]FieldName（省略 Field -> 默认 id）
+    REF_PREFIX_RE = re.compile(r"^\s*\[(?P<sheet>[^/\]]+)(?:/(?P<field>[^\]]+))?\]\s*(?P<name>.+)$")
 
     def __init__(self, worksheet) -> None:
         self.name: str = worksheet.title
@@ -54,19 +57,22 @@ class WorksheetData:
         self.field_names = self.cell_values[5]
         self.default_values = self.cell_values[6]
 
-        if len(self.data_types) != len(self.field_names):
-            raise RuntimeError(
-                f"字段行数量与类型行数量不一致: fields={len(self.field_names)}, types={len(self.data_types)}"
-            )
-        if len(self.data_labels) != len(self.field_names):
-            raise RuntimeError(
-                f"字段行数量与标签行数量不一致: fields={len(self.field_names)}, labels={len(self.data_labels)}"
-            )
-        if len(self.default_values) != len(self.field_names):
-            # 不强制报错，只警告
-            log_warn(
-                f"默认值列数量与字段列数量不一致: fields={len(self.field_names)}, defaults={len(self.default_values)}"
-            )
+        # 放宽到“告警+自动对齐到字段列数”以兼容历史表头差异
+        def _align_list(lst: List[Any], target: int, fill: Any = None, name: str = "") -> List[Any]:
+            if len(lst) == target:
+                return lst
+            if len(lst) < target:
+                log_warn(f"{self.name}: {name} 数量({len(lst)}) < 字段列({target})，已以 None 填充")
+                return lst + [fill] * (target - len(lst))
+            log_warn(f"{self.name}: {name} 数量({len(lst)}) > 字段列({target})，已截断多余列")
+            return lst[:target]
+
+        n_fields = len(self.field_names)
+        self.remarks = _align_list(self.remarks, n_fields, None, "备注行")
+        self.headers = _align_list(self.headers, n_fields, None, "表头行")
+        self.data_types = _align_list(self.data_types, n_fields, None, "类型行")
+        self.data_labels = _align_list(self.data_labels, n_fields, None, "标签行")
+        self.default_values = _align_list(self.default_values, n_fields, None, "默认值行")
 
         # 数据行
         self.row_data = list(worksheet.iter_rows(min_row=7, min_col=2))
@@ -91,6 +97,26 @@ class WorksheetData:
         if self.composite_keys:
             self._check_duplicate_composite_keys()
         self.first_int_pk_not_named_id_warned = False
+
+        # 解析字段上的引用前缀 [Sheet/Field]
+        self._ref_specs: Dict[int, Tuple[str, Optional[str]]] = {}
+        for i, raw_field_name in enumerate(self.field_names):
+            if i == 0:
+                continue
+            if self.data_labels[i] == "ignore":
+                continue
+            if not isinstance(raw_field_name, str):
+                continue
+            m = self.REF_PREFIX_RE.match(raw_field_name)
+            if m:
+                sheet = m.group("sheet").strip()
+                field = m.group("field")
+                field = field.strip() if field else None
+                self._ref_specs[i] = (sheet, field)
+
+        # 供 generate_json 收集待检查项
+        self._pending_ref_checks: List[Dict[str, Any]] = []
+        self._ref_dict_warned_cols: set[int] = set()
 
         if not self._has_effective_data:
             log_warn(f"表[{self.name}] 没有有效数据行（将生成空 JSON）。")
@@ -156,7 +182,42 @@ class WorksheetData:
         m2 = self.KEY2_PREFIX_RE.match(raw)
         if m2:
             return m2.group("name").strip()
+        # 去掉引用前缀 [Sheet/Field]
+        m3 = self.REF_PREFIX_RE.match(raw)
+        if m3:
+            return m3.group("name").strip()
         return raw
+
+    @staticmethod
+    def _parse_type_annotation(type_str: str) -> Tuple[str, Optional[str]]:
+        t = (type_str or "").strip().lower()
+        def base_norm(s: str) -> str:
+            s = s.strip().lower()
+            if s in ("int", "int32", "integer"): return "int"
+            if s in ("float", "double"): return "float"
+            if s in ("str", "string"): return "string"
+            if s in ("bool", "boolean"): return "bool"
+            return s
+        if t.startswith("list(") and t.endswith(")"):
+            return "list", base_norm(t[5:-1])
+        if t.startswith("dict(") and t.endswith(")"):
+            return "dict", None
+        return "scalar", base_norm(t)
+
+    @staticmethod
+    def _value_type_ok(base: str, v: Any) -> bool:
+        if v is None:
+            return False
+        if base == "int":
+            return isinstance(v, int) and not isinstance(v, bool)
+        if base == "float":
+            return isinstance(v, (int, float)) and not isinstance(v, bool)
+        if base == "string":
+            return isinstance(v, str)
+        if base == "bool":
+            return isinstance(v, bool)
+        # 未知类型：不强校验
+        return True
 
     def _detect_composite_keys_with_prefixes_in_first_two_columns(self) -> None:
         """
@@ -371,6 +432,26 @@ class WorksheetData:
                         value = None
                 row_obj[data_name] = value
 
+                # 收集引用检查
+                if col_index in self._ref_specs:
+                    ref_sheet, ref_field = self._ref_specs[col_index]
+                    kind, base = self._parse_type_annotation(type_str)
+                    if kind == "dict":
+                        if col_index not in self._ref_dict_warned_cols:
+                            log_warn(f"[{self.name}] 字段 {data_name} 标注了引用 [{ref_sheet}/{ref_field or 'id'}] 但类型为字典，跳过检查")
+                            self._ref_dict_warned_cols.add(col_index)
+                    else:
+                        # 记录此行的待检查项
+                        self._pending_ref_checks.append({
+                            "excel_row": excel_row,
+                            "field_name": data_name,
+                            "ref_sheet": ref_sheet,
+                            "ref_field": ref_field,  # None -> id
+                            "kind": kind,
+                            "base": base,
+                            "value": value,
+                        })
+
             if not JSON_ID_FIRST:
                 row_obj["id"] = int(row_key)
             data[row_key] = row_obj
@@ -388,6 +469,99 @@ class WorksheetData:
 
         if _PRINT_FIELD_SUMMARY:
             log_info(f"[{self.name}] 导出完成: 行数={len(data)} required缺失={required_missing_count}")
+
+    def run_reference_checks(self, search_dirs: List[str]) -> None:
+        if not self._pending_ref_checks:
+            return
+        log_info(f"[{self.name}] 引用检查阶段")
+
+        cache: Dict[Tuple[str, str], Optional[Tuple[set, Optional[str]]]] = {}
+
+        def _infer_base_from_value(v: Any) -> Optional[str]:
+            if v is None:
+                return None
+            if isinstance(v, bool):
+                return "bool"
+            if isinstance(v, int) and not isinstance(v, bool):
+                return "int"
+            if isinstance(v, float):
+                return "float"
+            if isinstance(v, str):
+                return "string"
+            return None
+
+        def _infer_base_from_set(values: set) -> Optional[str]:
+            for x in values:
+                t = _infer_base_from_value(x)
+                if t is not None:
+                    return t
+            return None
+
+        def load_ref_set(sheet: str, field: Optional[str]) -> Optional[Tuple[set, Optional[str]]]:
+            f = field or "id"
+            key = (sheet, f)
+            if key in cache:
+                return cache[key]
+            path = None
+            for d in filter(None, search_dirs):
+                cand = os.path.join(d, JSON_FILE_PATTERN.format(name=sheet))
+                if os.path.isfile(cand):
+                    path = cand
+                    break
+            if path is None:
+                cache[key] = None
+                return None
+            try:
+                with open(path, "r", encoding="utf-8") as fp:
+                    obj = json.load(fp)
+                s: set = set()
+                for _, row in obj.items():
+                    if isinstance(row, dict) and f in row:
+                        s.add(row[f])
+                base = _infer_base_from_set(s)
+                cache[key] = (s, base)
+                return cache[key]
+            except Exception:
+                cache[key] = None
+                return None
+
+        for item in self._pending_ref_checks:
+            excel_row = item["excel_row"]
+            field_name = item["field_name"]
+            ref_sheet = item["ref_sheet"]
+            ref_field = item["ref_field"]
+            kind = item["kind"]
+            base = item["base"]
+            value = item["value"]
+
+            ref_pack = load_ref_set(ref_sheet, ref_field)
+            if ref_pack is None:
+                log_warn(f"[{self.name}] 行{excel_row} 字段 {field_name} 引用 [{ref_sheet}/{ref_field or 'id'}] 未找到目标表 JSON，已跳过检查")
+                continue
+            ref_values, ref_base = ref_pack
+
+            def check_one(v: Any, expected_base: Optional[str]) -> None:
+                if expected_base and not self._value_type_ok(expected_base, v):
+                    log_error(f"[{self.name}] 行{excel_row} 字段 {field_name} 类型不匹配，期望 {expected_base}，实际值 {v}")
+                    return
+                if v not in ref_values:
+                    log_error(f"[{self.name}] 行{excel_row} 字段 {field_name} 引用值不存在于 [{ref_sheet}/{ref_field or 'id'}]: {v}")
+
+            # 声明类型与目标列类型不一致也报错
+            if base and ref_base and base != ref_base:
+                if kind == "list":
+                    log_error(f"[{self.name}] 行{excel_row} 字段 {field_name} 引用类型不匹配，目标[{ref_sheet}/{ref_field or 'id'}]类型为 {ref_base}，本字段声明为 list({base})")
+                else:
+                    log_error(f"[{self.name}] 行{excel_row} 字段 {field_name} 引用类型不匹配，目标[{ref_sheet}/{ref_field or 'id'}]类型为 {ref_base}，本字段声明为 {base}")
+
+            if kind == "scalar":
+                check_one(value, base or ref_base)
+            elif kind == "list":
+                if isinstance(value, list):
+                    for ele in value:
+                        check_one(ele, base or ref_base)
+                else:
+                    log_error(f"[{self.name}] 行{excel_row} 字段 {field_name} 声明为 list({base}) 但实际非列表")
 
     def generate_script(self, output_folder: str) -> None:
         """

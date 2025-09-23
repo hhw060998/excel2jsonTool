@@ -16,12 +16,12 @@ def process_excel_file(
     output_project_folder: Optional[str],
     csfile_output_folder: Optional[str],
     enum_output_folder: Optional[str],
-) -> None:
+) -> Optional[WorksheetData]:
     try:
         wb = openpyxl.load_workbook(str(excel_path), data_only=True)
     except Exception as e:
         log_error(f"打开失败: {green_filename(excel_path.name)} -> {e}")
-        return
+        return None
     main_sheet = wb.worksheets[0]
     if main_sheet.title in file_sheet_map.values():
         dup = next(f for f, s in file_sheet_map.items() if s == main_sheet.title)
@@ -45,6 +45,7 @@ def process_excel_file(
 
     file_sheet_map[excel_path.name] = main_sheet.title
     log_info(f"完成 {excel_path.name} \n")
+    return main_sheet_data
 
 def cleanup_files(output_folders):
     created = set(get_created_files())
@@ -98,13 +99,14 @@ def batch_excel_to_json(
     if not excel_files:
         log_warn("未找到 .xlsx 文件")
 
+    sheets: list[WorksheetData] = []
     for excel_path in excel_files:
         if not excel_path.name[0].isupper():
             log_warn(f"跳过(首字母非大写): {green_filename(excel_path.name)}")
             skip += 1
             continue
         try:
-            process_excel_file(
+            ws = process_excel_file(
                 excel_path,
                 file_sheet_map,
                 output_client_folder,
@@ -112,6 +114,8 @@ def batch_excel_to_json(
                 csfile_output_folder,
                 enum_output_folder,
             )
+            if ws is not None:
+                sheets.append(ws)
             ok += 1
         except SheetNameConflictError as e:
             log_error(f"{green_filename(excel_path.name)} 冲突: {e}")
@@ -119,6 +123,15 @@ def batch_excel_to_json(
             log_error(f"{green_filename(excel_path.name)} 失败: {e}")
         except Exception as e:
             log_error(f"{green_filename(excel_path.name)} 未知错误: {e}")
+
+    # 统一引用检查（导出后）
+    if sheets:
+        search_dirs = [output_client_folder, output_project_folder]
+        for ws in sheets:
+            try:
+                ws.run_reference_checks(search_dirs)
+            except Exception as e:
+                log_error(f"[{ws.name}] 引用检查失败: {e}")
 
     if auto_cleanup:
         log_sep("清理阶段")
