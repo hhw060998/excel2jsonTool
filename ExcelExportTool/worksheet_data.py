@@ -15,7 +15,14 @@ from exceptions import (
     DuplicatePrimaryKeyError,
     CompositeKeyOverflowError,
 )
-from naming_config import JSON_FILE_PATTERN, ENUM_KEYS_SUFFIX, JSON_SORT_KEYS, JSON_ID_FIRST
+from naming_config import (
+    JSON_FILE_PATTERN,
+    ENUM_KEYS_SUFFIX,
+    JSON_SORT_KEYS,
+    JSON_ID_FIRST,
+    REFERENCE_ALLOW_EMPTY_INT_VALUES,
+    REFERENCE_ALLOW_EMPTY_STRING_VALUES,
+)
 
 # 新增：可选字段统计开关（保持功能不变，默认打印一次汇总；若不需要可改为 False）
 _PRINT_FIELD_SUMMARY = True
@@ -352,6 +359,10 @@ class WorksheetData:
             - 组合键：id = key1*MULTIPLIER + key2
             - 单列 int 主键：id = 第一列的 int 值；若第一列字段名不是 'id' 则打印一次警告
         """
+        # 避免重复收集：若同一张表导出到多个目录，这里清空后重新收集一次
+        if hasattr(self, "_pending_ref_checks"):
+            self._pending_ref_checks.clear()
+
         data: Dict[Any, Dict[str, Any]] = {}
         serial_key = 0
         first_real = self._actual_field_name(1) if len(self.field_names) > 1 else None
@@ -470,12 +481,13 @@ class WorksheetData:
         if _PRINT_FIELD_SUMMARY:
             log_info(f"[{self.name}] 导出完成: 行数={len(data)} required缺失={required_missing_count}")
 
-    def run_reference_checks(self, search_dirs: List[str]) -> None:
+    def run_reference_checks(self, search_dirs: List[str], sheet_to_file_map: Optional[Dict[str, str]] = None) -> None:
+        # 若没有待检查项或已检查过，直接返回，避免重复日志
+        if getattr(self, "_reference_checks_done", False):
+            return
         if not self._pending_ref_checks:
             return
-        log_info(f"[{self.name}] 引用检查阶段")
-
-        cache: Dict[Tuple[str, str], Optional[Tuple[set, Optional[str]]]] = {}
+        cache: Dict[Tuple[str, str], Optional[Tuple[set, Optional[str], str]]] = {}
 
         def _infer_base_from_value(v: Any) -> Optional[str]:
             if v is None:
@@ -497,11 +509,22 @@ class WorksheetData:
                     return t
             return None
 
-        def load_ref_set(sheet: str, field: Optional[str]) -> Optional[Tuple[set, Optional[str]]]:
-            f = field or "id"
-            key = (sheet, f)
-            if key in cache:
-                return cache[key]
+        def _pick_first_nonempty_field(obj: Dict[str, Any]) -> Optional[str]:
+            # 选择第一条记录中，第一个非空且非容器的字段（包含 id）
+            for k, v in obj.items():
+                if isinstance(v, (list, dict)):
+                    continue
+                if v not in (None, ""):
+                    return k
+            return None
+
+        def load_ref_set(sheet: str, field: Optional[str], expected_base: Optional[str]) -> Optional[Tuple[set, Optional[str], str]]:
+            # 当 field 省略时，不使用 (sheet, "__OMIT__") 作为缓存键，避免不同期望类型下的误复用
+            if field is not None:
+                f = field
+                key = (sheet, f)
+                if key in cache:
+                    return cache[key]
             path = None
             for d in filter(None, search_dirs):
                 cand = os.path.join(d, JSON_FILE_PATTERN.format(name=sheet))
@@ -509,21 +532,42 @@ class WorksheetData:
                     path = cand
                     break
             if path is None:
-                cache[key] = None
+                if field is not None:
+                    cache[(sheet, field)] = None
                 return None
             try:
                 with open(path, "r", encoding="utf-8") as fp:
                     obj = json.load(fp)
-                s: set = set()
-                for _, row in obj.items():
-                    if isinstance(row, dict) and f in row:
-                        s.add(row[f])
-                base = _infer_base_from_set(s)
-                cache[key] = (s, base)
-                return cache[key]
+                # 确定实际引用列 real_field
+                if field is None:
+                    first_row = next(iter(obj.values()), None)
+                    if isinstance(first_row, dict):
+                        pick = _pick_first_nonempty_field(first_row)
+                        real_field = pick or "id"
+                    else:
+                        real_field = "id"
+                else:
+                    real_field = field
+
+                def build_set_for(col: str) -> Tuple[set, Optional[str]]:
+                    s: set = set()
+                    for _, row in obj.items():
+                        if isinstance(row, dict) and col in row:
+                            s.add(row[col])
+                    return s, _infer_base_from_set(s)
+
+                values, base = build_set_for(real_field)
+
+                cache[(sheet, real_field)] = (values, base, real_field)
+                if field is not None:
+                    cache[(sheet, field)] = cache[(sheet, real_field)]
+                return cache[(sheet, real_field)]
             except Exception:
-                cache[key] = None
+                if field is not None:
+                    cache[(sheet, field)] = None
                 return None
+
+        any_error = False
 
         for item in self._pending_ref_checks:
             excel_row = item["excel_row"]
@@ -534,25 +578,53 @@ class WorksheetData:
             base = item["base"]
             value = item["value"]
 
-            ref_pack = load_ref_set(ref_sheet, ref_field)
+            ref_pack = load_ref_set(ref_sheet, ref_field, base)
             if ref_pack is None:
                 log_warn(f"[{self.name}] 行{excel_row} 字段 {field_name} 引用 [{ref_sheet}/{ref_field or 'id'}] 未找到目标表 JSON，已跳过检查")
                 continue
-            ref_values, ref_base = ref_pack
+            ref_values, ref_base, ref_real_field = ref_pack
+
+            def _is_empty_ref(val: Any, base_type: Optional[str]) -> bool:
+                if base_type == "int":
+                    return isinstance(val, int) and val in REFERENCE_ALLOW_EMPTY_INT_VALUES
+                if base_type == "string":
+                    return isinstance(val, str) and val in REFERENCE_ALLOW_EMPTY_STRING_VALUES
+                return False
 
             def check_one(v: Any, expected_base: Optional[str]) -> None:
+                # 允许空值策略：命中则跳过存在性检查
+                if _is_empty_ref(v, expected_base or ref_base):
+                    return
                 if expected_base and not self._value_type_ok(expected_base, v):
                     log_error(f"[{self.name}] 行{excel_row} 字段 {field_name} 类型不匹配，期望 {expected_base}，实际值 {v}")
                     return
                 if v not in ref_values:
-                    log_error(f"[{self.name}] 行{excel_row} 字段 {field_name} 引用值不存在于 [{ref_sheet}/{ref_field or 'id'}]: {v}")
+                    nonlocal any_error
+                    any_error = True
+                    src = getattr(self, "source_file", None)
+                    src_disp = f"[{src}] " if src else ""
+                    target_excel = None
+                    if sheet_to_file_map and ref_sheet in sheet_to_file_map:
+                        target_excel = sheet_to_file_map.get(ref_sheet)
+                    target_disp = f"[{target_excel or f'{ref_sheet}.xlsx'}]"
+                    marker = f"[{ref_sheet}/{ref_real_field}]"
+                    # 格式：[(绿色)源文件] 行X 字段Y 引用值V 不存在于目标文件，但被标记为[Sheet/Field]
+                    log_error(f"{src_disp}行{excel_row} 字段{field_name} 引用值{v} 不存在于{target_disp}，但被标记为{marker}")
 
-            # 声明类型与目标列类型不一致也报错
+            # 声明类型与目标列类型不一致也报错（使用与“引用缺失”一致的格式）
             if base and ref_base and base != ref_base:
+                any_error = True
+                src = getattr(self, "source_file", None)
+                src_disp = f"[{src}] " if src else ""
+                target_excel = None
+                if sheet_to_file_map and ref_sheet in sheet_to_file_map:
+                    target_excel = sheet_to_file_map.get(ref_sheet)
+                target_disp = f"[{target_excel or f'{ref_sheet}.xlsx'}]"
+                marker = f"[{ref_sheet}/{ref_real_field}]"
                 if kind == "list":
-                    log_error(f"[{self.name}] 行{excel_row} 字段 {field_name} 引用类型不匹配，目标[{ref_sheet}/{ref_field or 'id'}]类型为 {ref_base}，本字段声明为 list({base})")
+                    log_error(f"{src_disp}行{excel_row} 字段{field_name} 引用类型不匹配 {target_disp}，但被标记为{marker}（目标类型为{ref_base}，本字段声明为 list({base})）")
                 else:
-                    log_error(f"[{self.name}] 行{excel_row} 字段 {field_name} 引用类型不匹配，目标[{ref_sheet}/{ref_field or 'id'}]类型为 {ref_base}，本字段声明为 {base}")
+                    log_error(f"{src_disp}行{excel_row} 字段{field_name} 引用类型不匹配 {target_disp}，但被标记为{marker}（目标类型为{ref_base}，本字段声明为 {base}）")
 
             if kind == "scalar":
                 check_one(value, base or ref_base)
@@ -562,6 +634,15 @@ class WorksheetData:
                         check_one(ele, base or ref_base)
                 else:
                     log_error(f"[{self.name}] 行{excel_row} 字段 {field_name} 声明为 list({base}) 但实际非列表")
+
+        # 若执行了检查且无任何错误，打印一行成功日志
+        if self._pending_ref_checks and not any_error:
+            src = getattr(self, "source_file", None)
+            src_disp = f"[{src}] " if src else f"[{self.name}] "
+            log_info(f"{src_disp}没有引用丢失或引用类型不匹配")
+
+        # 标记已完成，避免重复打印
+        self._reference_checks_done = True
 
     def generate_script(self, output_folder: str) -> None:
         """

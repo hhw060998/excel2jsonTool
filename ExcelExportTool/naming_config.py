@@ -13,3 +13,10 @@ ENUM_KEYS_SUFFIX = "Keys"
 JSON_SORT_KEYS = False
 # 是否将每条记录的 id 字段放在最前（若 Excel 第一字段并非 id，也会自动补id并放前）
 JSON_ID_FIRST = True
+
+# ===== 引用检查相关配置 =====
+# 当引用字段为 int 类型时，将这些取值视为“空引用”，跳过存在性检查
+REFERENCE_ALLOW_EMPTY_INT_VALUES = {0}
+
+# 当引用字段为 string 类型时，将这些取值视为“空引用”，跳过存在性检查
+REFERENCE_ALLOW_EMPTY_STRING_VALUES = {""}

@@ -8,6 +8,7 @@ from worksheet_data import WorksheetData
 from cs_generation import generate_enum_file_from_sheet, get_created_files, set_output_options
 from log import log_info, log_warn, log_error, log_success, log_sep, green_filename
 from exceptions import SheetNameConflictError, ExportError
+REPORT = None  # 报表文件输出已移除
 
 def process_excel_file(
     excel_path: Path,
@@ -29,6 +30,11 @@ def process_excel_file(
 
     log_sep(f"开始 {green_filename(excel_path.name)}")
     main_sheet_data = WorksheetData(main_sheet)
+    # 记录来源 Excel 文件名，供日志使用
+    try:
+        setattr(main_sheet_data, "source_file", excel_path.name)
+    except Exception:
+        pass
 
     if output_client_folder:
         main_sheet_data.generate_json(output_client_folder)
@@ -94,6 +100,8 @@ def batch_excel_to_json(
     skip = 0
     ok = 0
     file_sheet_map: dict[str, str] = {}
+    # 反查 map: sheet 名 -> excel 文件名（用于日志显示目标 Excel 文件）
+    sheet_to_file_map: dict[str, str] = {}
     excel_files = list(Path(source_folder).rglob("*.xlsx"))
 
     if not excel_files:
@@ -116,6 +124,11 @@ def batch_excel_to_json(
             )
             if ws is not None:
                 sheets.append(ws)
+                # 记录 sheet -> 文件名
+                try:
+                    sheet_to_file_map[ws.name] = excel_path.name
+                except Exception:
+                    pass
             ok += 1
         except SheetNameConflictError as e:
             log_error(f"{green_filename(excel_path.name)} 冲突: {e}")
@@ -127,11 +140,16 @@ def batch_excel_to_json(
     # 统一引用检查（导出后）
     if sheets:
         search_dirs = [output_client_folder, output_project_folder]
+        # 空行分隔阶段，并打印一次阶段标题
+        log_info("")
+        log_info("————开始引用检查————")
         for ws in sheets:
             try:
-                ws.run_reference_checks(search_dirs)
+                ws.run_reference_checks(search_dirs, sheet_to_file_map)
             except Exception as e:
                 log_error(f"[{ws.name}] 引用检查失败: {e}")
+
+    # 打印每表错误/警告统计（若实现了内部统计则输出；当前由 worksheet 在控制台输出具体错误）
 
     if auto_cleanup:
         log_sep("清理阶段")
