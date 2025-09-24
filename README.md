@@ -49,6 +49,17 @@ ProjectFolder/          # 目标工程侧示例（C#、JSON 输出示例）
 3) 一键导出
 - 双击运行 `ExcelFolder/!【导表】.bat`，自动导出 JSON 与 C# 代码到配置的目录。
 
+GUI 使用
+- **启动方式**: 在仓库根目录运行:
+	- `python tools/gui_export_launcher.py`
+	或者双击 `ExcelFolder/启动导表_GUI.bat`（如果存在）。
+- **操作流程**:
+	- **选择路径**: 使用每个条目的 `浏览` 按钮选择 `Python` 可执行程序、`Excel 根目录`、输出目录等（输入框为只读，避免误输）。
+	- **保存配置**: 点击 `保存配置` 将当前设置写入或更新批处理文件（会备份原文件为 `.bak`）。
+	- **运行导表**: 点击 `运行批处理` 在 GUI 下方的 `运行输出` 区查看实时日志与进度信息。
+	- **关闭行为**: 关闭 GUI 时会尝试终止正在运行的导表子进程，确保不会留下孤立的命令窗口。
+- **注意**: GUI 会将运行日志实时打印在界面下方，用于排查导表过程中的错误与警告；所有路径必须通过 `浏览` 选择以保证合法性。
+
 4) 运行时集成（C#）
 - 将导出的 JSON 与 C# 文件加入项目。
 - 游戏启动时调用生成的加载方法，完成反序列化与索引构建，即可通过生成的 API 查询数据。
@@ -341,3 +352,25 @@ Notes: errors/warnings do not stop the export, allowing you to fix all issues in
 ## License
 
 See `LICENSE` at the repository root.
+
+---
+
+## GUI Usage (English)
+
+- **How to start**: from the repository root run:
+	- `python tools/gui_export_launcher.py`
+	or double-click `ExcelFolder/启动导表_GUI.bat` if present.
+- **Workflow**:
+	- **Select paths**: use each `Browse` button to pick the Python executable, Excel root, and output directories (fields are read-only to avoid typos).
+	- **Save config**: click `Save Config` to write/update a batch file (original file is backed up with `.bak`).
+	- **Run export**: click `Run Batch` — realtime logs and progress appear in the `Run Output` area at the bottom of the GUI.
+	- **Close behavior**: closing the GUI will attempt to terminate any running export subprocess.
+- **Note**: the GUI prints runtime logs in the interface for troubleshooting; always select paths via `Browse`.
+
+## Example Screenshots
+
+Add screenshots under `docs/` (or `assets/`) and reference them here. Example embeds included below use SVG placeholders added to the repository:
+
+![GUI - Main Window](docs/gui_main.png)
+
+If you prefer multiple screenshots, add them under `docs/` and reference them similarly.
