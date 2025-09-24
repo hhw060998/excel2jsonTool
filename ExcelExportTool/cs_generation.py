@@ -250,10 +250,20 @@ def write_to_file(content: str, file_path: str) -> None:
 
     try:
         fd, tmp_name = tempfile.mkstemp(dir=str(path.parent), prefix=".tmp_", suffix=".part")
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(content)
-        shutil.move(tmp_name, path)
-        log_info(f"成功生成文件: {file_path}")
-        _created_files.append(str(path.resolve()))
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(content)
+            shutil.move(tmp_name, path)
+            log_info(f"成功生成文件: {file_path}")
+            _created_files.append(str(path.resolve()))
+        finally:
+            # 若临时文件残留则尝试删除
+            if os.path.exists(tmp_name):
+                try:
+                    os.remove(tmp_name)
+                except Exception:
+                    pass
     except Exception as e:
-        log_warn(f"写入失败 {file_path}: {e}")
+        # 将写入失败升级为异常，便于上层统一处理
+        from exceptions import WriteFileError
+        raise WriteFileError(file_path, str(e))

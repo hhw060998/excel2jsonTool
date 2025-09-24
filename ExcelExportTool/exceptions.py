@@ -46,3 +46,13 @@ class CustomTypeParseError(ExportError):
 class InvalidFieldNameError(ExportError):
     def __init__(self, field: str, col_index: int, sheet: str):
         super().__init__(f"非法字段名: '{field}' 在表 '{sheet}' 列索引 {col_index} 不符合 C# 命名规范")
+
+
+class WriteFileError(ExportError):
+    def __init__(self, path: str, reason: str):
+        super().__init__(f"写入文件失败: {path} -> {reason}")
+
+
+class HeaderFormatError(ExportError):
+    def __init__(self, sheet: str, reason: str):
+        super().__init__(f"表头格式错误: {sheet} -> {reason}")

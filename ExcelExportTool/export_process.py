@@ -5,11 +5,16 @@ import openpyxl
 from pathlib import Path
 from typing import Optional
 import sys
+import os
+import shutil
+import traceback
 from worksheet_data import WorksheetData
 from cs_generation import generate_enum_file_from_sheet, get_created_files, set_output_options
 from log import log_info, log_warn, log_error, log_success, log_sep, green_filename
 from exceptions import SheetNameConflictError, ExportError
 from exceptions import InvalidFieldNameError
+from exceptions import WriteFileError
+from exceptions import DuplicateFieldError, HeaderFormatError, UnknownCustomTypeError
 REPORT = None  # 报表文件输出已移除
 
 def process_excel_file(
@@ -99,6 +104,38 @@ def batch_excel_to_json(
     log_info(f"Excel目录: {source_folder}")
     set_output_options(diff_only=diff_only, dry_run=dry_run)
 
+    # 输出目录可写性与磁盘空间检查
+    def _check_output_dir(folder: Optional[str]) -> None:
+        if not folder:
+            return
+        try:
+            os.makedirs(folder, exist_ok=True)
+        except Exception as e:
+            raise ExportError(f"无法创建输出目录: {folder} -> {e}")
+        # 检查是否可写
+        if not os.access(folder, os.W_OK):
+            raise ExportError(f"输出目录不可写: {folder}")
+        # 检查剩余空间（简单策略：至少 10MB 可用）
+        try:
+            stat = os.statvfs(folder)
+            free = stat.f_bavail * stat.f_frsize
+            if free < 10 * 1024 * 1024:
+                raise ExportError(f"输出目录磁盘空间不足 (<10MB): {folder}")
+        except AttributeError:
+            # Windows 不支持 statvfs，尝试使用 shutil.disk_usage
+            try:
+                du = shutil.disk_usage(folder)
+                if du.free < 10 * 1024 * 1024:
+                    raise ExportError(f"输出目录磁盘空间不足 (<10MB): {folder}")
+            except Exception:
+                pass
+
+    import shutil
+    _check_output_dir(output_client_folder)
+    _check_output_dir(output_project_folder)
+    _check_output_dir(csfile_output_folder)
+    _check_output_dir(enum_output_folder)
+
     skip = 0
     ok = 0
     file_sheet_map: dict[str, str] = {}
@@ -133,16 +170,11 @@ def batch_excel_to_json(
                 except Exception:
                     pass
             ok += 1
-        except InvalidFieldNameError as e:
-            # 字段命名错误为致命错误：立即终止整个进程（红色日志）
-            log_error(f"字段命名错误: {e}")
-            sys.exit(1)
-        except SheetNameConflictError as e:
-            log_error(f"{green_filename(excel_path.name)} 冲突: {e}")
-        except ExportError as e:
-            log_error(f"{green_filename(excel_path.name)} 失败: {e}")
         except Exception as e:
-            log_error(f"{green_filename(excel_path.name)} 未知错误: {e}")
+            # 所有异常视为致命：打印红色错误、堆栈信息，并给出建议后立即退出
+            tb = traceback.format_exc()
+            log_error(f"{excel_path.name} 失败: {e}\n{tb}")
+            sys.exit(1)
 
     # 统一引用检查（导出后）
     if sheets and not aborted:

@@ -15,6 +15,7 @@ from exceptions import (
     DuplicatePrimaryKeyError,
     CompositeKeyOverflowError,
     InvalidFieldNameError,
+    HeaderFormatError,
 )
 from naming_config import (
     JSON_FILE_PATTERN,
@@ -64,6 +65,19 @@ class WorksheetData:
         self.data_labels = self.cell_values[4]
         self.field_names = self.cell_values[5]
         self.default_values = self.cell_values[6]
+
+        # 严格表头检查：确保 1..6 行存在且列数匹配
+        for i in range(1, 7):
+            row = self.cell_values.get(i)
+            if not isinstance(row, list) or len(row) == 0:
+                raise HeaderFormatError(self.name, f"表头第{i}行缺失或为空")
+        # 字段行长度
+        n_fields = len(self.field_names)
+        if n_fields == 0:
+            raise HeaderFormatError(self.name, "字段行为空或未定义")
+        for i in range(1, 7):
+            if len(self.cell_values[i]) != n_fields:
+                raise HeaderFormatError(self.name, f"第{i}行长度({len(self.cell_values[i])}) 与字段列({n_fields}) 不匹配")
 
         # 放宽到“告警+自动对齐到字段列数”以兼容历史表头差异
         def _align_list(lst: List[Any], target: int, fill: Any = None, name: str = "") -> List[Any]:
