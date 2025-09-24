@@ -41,3 +41,8 @@ class CustomTypeParseError(ExportError):
             loc.append(f"表:{sheet}")
         suffix = (" (" + ", ".join(loc) + ")") if loc else ""
         super().__init__(f"自定义类型解析失败: {type_name} 原值:[{raw}] -> {reason}{suffix}")
+
+
+class InvalidFieldNameError(ExportError):
+    def __init__(self, field: str, col_index: int, sheet: str):
+        super().__init__(f"非法字段名: '{field}' 在表 '{sheet}' 列索引 {col_index} 不符合 C# 命名规范")

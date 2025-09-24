@@ -8,12 +8,13 @@ from collections import defaultdict
 
 from cs_generation import generate_script_file, generate_enum_file
 from excel_processing import read_cell_values, check_repeating_values
-from data_processing import convert_to_type, available_csharp_enum_name
+from data_processing import convert_to_type, available_csharp_enum_name, is_valid_csharp_identifier
 from log import log_warn, log_error, log_info
 from exceptions import (
     InvalidEnumNameError,
     DuplicatePrimaryKeyError,
     CompositeKeyOverflowError,
+    InvalidFieldNameError,
 )
 from naming_config import (
     JSON_FILE_PATTERN,
@@ -124,6 +125,20 @@ class WorksheetData:
         # 供 generate_json 收集待检查项
         self._pending_ref_checks: List[Dict[str, Any]] = []
         self._ref_dict_warned_cols: set[int] = set()
+
+        # 字段命名规范校验（C# 标识符），若不合法则抛错终止导出
+        for i in range(len(self.field_names)):
+            if i == 0:
+                continue
+            if self.data_labels[i] == "ignore":
+                continue
+            raw = self.field_names[i]
+            if not isinstance(raw, str):
+                continue
+            # 取真实字段名（去掉 key1/key2/ref 前缀）
+            actual = self._actual_field_name(i)
+            if not is_valid_csharp_identifier(actual):
+                raise InvalidFieldNameError(actual, i, self.name)
 
         if not self._has_effective_data:
             log_warn(f"表[{self.name}] 没有有效数据行（将生成空 JSON）。")

@@ -4,10 +4,12 @@ import time
 import openpyxl
 from pathlib import Path
 from typing import Optional
+import sys
 from worksheet_data import WorksheetData
 from cs_generation import generate_enum_file_from_sheet, get_created_files, set_output_options
 from log import log_info, log_warn, log_error, log_success, log_sep, green_filename
 from exceptions import SheetNameConflictError, ExportError
+from exceptions import InvalidFieldNameError
 REPORT = None  # 报表文件输出已移除
 
 def process_excel_file(
@@ -108,6 +110,7 @@ def batch_excel_to_json(
         log_warn("未找到 .xlsx 文件")
 
     sheets: list[WorksheetData] = []
+    aborted = False
     for excel_path in excel_files:
         if not excel_path.name[0].isupper():
             log_warn(f"跳过(首字母非大写): {green_filename(excel_path.name)}")
@@ -130,6 +133,10 @@ def batch_excel_to_json(
                 except Exception:
                     pass
             ok += 1
+        except InvalidFieldNameError as e:
+            # 字段命名错误为致命错误：立即终止整个进程（红色日志）
+            log_error(f"字段命名错误: {e}")
+            sys.exit(1)
         except SheetNameConflictError as e:
             log_error(f"{green_filename(excel_path.name)} 冲突: {e}")
         except ExportError as e:
@@ -138,7 +145,7 @@ def batch_excel_to_json(
             log_error(f"{green_filename(excel_path.name)} 未知错误: {e}")
 
     # 统一引用检查（导出后）
-    if sheets:
+    if sheets and not aborted:
         search_dirs = [output_client_folder, output_project_folder]
         # 空行分隔阶段，并打印一次阶段标题
         log_info("")
@@ -151,10 +158,13 @@ def batch_excel_to_json(
 
     # 打印每表错误/警告统计（若实现了内部统计则输出；当前由 worksheet 在控制台输出具体错误）
 
-    if auto_cleanup:
+    if auto_cleanup and not aborted:
         log_sep("清理阶段")
         cleanup_files([output_client_folder, output_project_folder, csfile_output_folder, enum_output_folder])
 
     elapsed = time.time() - start
     log_sep("结束")
-    log_success(f"成功 {ok}，跳过 {skip}，总耗时 {elapsed:.2f}s diff_only={diff_only} dry_run={dry_run}")
+    if aborted:
+        log_error(f"导表已中止: 字段命名不合法，已停止后续处理。成功 {ok}，跳过 {skip}，总耗时 {elapsed:.2f}s")
+    else:
+        log_success(f"成功 {ok}，跳过 {skip}，总耗时 {elapsed:.2f}s diff_only={diff_only} dry_run={dry_run}")

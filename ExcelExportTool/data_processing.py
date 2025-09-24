@@ -7,6 +7,31 @@ import re
 from typing import Any, Callable, Dict, List, Optional
 from exceptions import UnknownCustomTypeError, CustomTypeParseError
 from log import log_warn
+import keyword
+import re
+
+
+_C_SHARP_KEYWORDS = set([
+    # C# keywords (常见)
+    'abstract','as','base','bool','break','byte','case','catch','char','checked','class','const','continue',
+    'decimal','default','delegate','do','double','else','enum','event','explicit','extern','false','finally',
+    'fixed','float','for','foreach','goto','if','implicit','in','int','interface','internal','is','lock','long',
+    'namespace','new','null','object','operator','out','override','params','private','protected','public','readonly',
+    'ref','return','sbyte','sealed','short','sizeof','stackalloc','static','string','struct','switch','this','throw',
+    'true','try','typeof','uint','ulong','unchecked','unsafe','ushort','using','virtual','void','volatile','while'
+])
+
+
+def is_valid_csharp_identifier(name: str) -> bool:
+    """检查 name 是否为合法的 C# 标识符（按常规约定：以字母或下划线开头，仅包含字母、数字或下划线，且不是关键字）。"""
+    if not isinstance(name, str) or not name:
+        return False
+    # 允许 PascalCase / camelCase: 只需首字符为字母或下划线
+    if not re.match(r'^[A-Za-z_][A-Za-z0-9_]*$', name):
+        return False
+    if name in _C_SHARP_KEYWORDS:
+        return False
+    return True
 
 # 基本类型映射
 PRIMITIVE_TYPE_MAPPING: Dict[str, Callable[[Any], Any]] = {
