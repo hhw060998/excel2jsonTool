@@ -8,7 +8,9 @@ from collections import defaultdict
 
 from cs_generation import generate_script_file, generate_enum_file
 from excel_processing import read_cell_values, check_repeating_values
-from data_processing import convert_to_type, available_csharp_enum_name, is_valid_csharp_identifier
+from data_processing import convert_to_type, available_csharp_enum_name
+from naming_utils import is_valid_csharp_identifier
+from type_utils import parse_type_annotation, convert_type_to_csharp
 from log import log_warn, log_error, log_info
 from exceptions import (
     InvalidEnumNameError,
@@ -187,7 +189,7 @@ class WorksheetData:
         result = {}
         for i in self._iter_effective_field_indices():
             actual_name = self._actual_field_name(i)
-            result[actual_name] = self._convert_to_csharp_type(self.data_types[i])
+            result[actual_name] = convert_type_to_csharp(self.data_types[i])
         return result
 
     def _get_property_remarks(self) -> Dict[str, str]:

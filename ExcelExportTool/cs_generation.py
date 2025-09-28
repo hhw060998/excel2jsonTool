@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Dict, Optional, List, Iterable, Tuple
 from log import log_warn, log_info
 from naming_config import CS_FILE_SUFFIX
+from type_utils import convert_type_to_csharp
 
 # ================== 常量与内部配置（不改变原有输出格式） ==================
 # CONST 区域：集中所有内部可调开关，方便阅读与维护
@@ -123,13 +124,7 @@ def add_indentation(input_str, indent="\t"):
     lines = input_str.splitlines()
     return "\n".join([indent + line for line in lines])
 
-_type_mappings_cache = {'list': 'List', 'dict': 'Dictionary'}
 
-def convert_type_to_csharp(type_str):
-    # 使用本地缓存映射
-    for k, v in _type_mappings_cache.items():
-        type_str = type_str.replace(k, v)
-    return type_str.replace('(', '<').replace(')', '>')
 
 def wrap_class_str(class_name, class_content_str, interface_name=""):
     """
