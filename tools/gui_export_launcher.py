@@ -68,17 +68,14 @@ class LauncherApp:
             lbl.grid(row=row, column=0, sticky='w', padx=6, pady=4)
             ent = tk.Entry(self.master, width=60, state='readonly')
             ent.grid(row=row, column=1, padx=6, pady=4)
-            # 浏览按钮：三个小点，宽度更小
             btn = tk.Button(self.master, text='...', width=3,
                             command=(lambda k=key, e=ent, m=browse_mode: self._on_browse(k, e, m)))
             btn.grid(row=row, column=2, padx=(2,2), pady=4)
-            # 重置按钮，初始隐藏
             reset_btn = tk.Button(self.master, text='重置', width=4,
                                   command=(lambda k=key, e=ent: self._on_reset_path(k, e)))
             reset_btn.grid(row=row, column=3, padx=(2,2), pady=4)
             reset_btn.grid_remove()
             self._reset_buttons[key] = reset_btn
-            # 状态标签（显示路径是否有效）
             st = tk.Label(self.master, text='', fg='red')
             st.grid(row=row, column=4, padx=6, pady=4, sticky='w')
             self.status_labels[key] = st
@@ -91,20 +88,17 @@ class LauncherApp:
         self.e_cs_output = add_entry('C# 脚本输出目录:', 'cs_output', 'dir')
         self.e_enum_output = add_entry('枚举输出目录:', 'enum_output', 'dir')
 
-        # Batch path (optional)
         lbl = tk.Label(self.master, text='批处理文件（可选）:')
         lbl.grid(row=row, column=0, sticky='w', padx=6, pady=4)
         self.e_batch = tk.Entry(self.master, width=60, state='readonly')
         self.e_batch.grid(row=row, column=1, padx=6, pady=4)
         btnb = tk.Button(self.master, text='...', width=3, command=self._browse_batch)
         btnb.grid(row=row, column=2, padx=(2,2), pady=4)
-        # 不为 batch_path 加重置按钮
         st = tk.Label(self.master, text='', fg='red')
         st.grid(row=row, column=4, padx=6, pady=4, sticky='w')
         self.status_labels['batch_path'] = st
         row += 1
 
-        # Buttons
         frm = tk.Frame(self.master)
         frm.grid(row=row, column=0, columnspan=3, pady=6)
         self.btn_validate = tk.Button(frm, text='校验', command=self._validate)
@@ -116,12 +110,19 @@ class LauncherApp:
         self._button_frame = frm
         row += 1
 
-        # Output area
         lbl_out = tk.Label(self.master, text='运行输出:')
         lbl_out.grid(row=row, column=0, sticky='w', padx=6, pady=4)
         row += 1
+        # 让日志文本区随窗口拉伸
         self.txt = scrolledtext.ScrolledText(self.master, height=20, width=92)
-        self.txt.grid(row=row, column=0, columnspan=3, padx=6, pady=4)
+        self.txt.grid(row=row, column=0, columnspan=5, padx=6, pady=4, sticky='nsew')
+
+        # 配置grid行列权重，只有日志区所在行/列可扩展
+        for i in range(row):
+            self.master.grid_rowconfigure(i, weight=0)
+        self.master.grid_rowconfigure(row, weight=1)
+        for i in range(5):
+            self.master.grid_columnconfigure(i, weight=1 if i == 1 else 0)
 
     def _on_browse(self, key, entry_widget, mode):
         # 如果当前字段已有有效路径，使用它作为初始目录；否则使用仓库根或用户目录
@@ -585,7 +586,11 @@ class LauncherApp:
             pass
 
     def _append_text(self, s: str):
-        self.txt.insert(tk.END, s)
+        # 去除ANSI颜色码，防止GUI日志乱码
+        import re
+        ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
+        clean_s = ansi_escape.sub('', s)
+        self.txt.insert(tk.END, clean_s)
         self.txt.see(tk.END)
 
     def _on_reset_path(self, key, entry_widget):
