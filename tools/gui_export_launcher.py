@@ -51,28 +51,37 @@ class LauncherApp:
         self.status_labels = {}
 
         self._build_ui()
-        self._load_config()
         # 记录加载时配置，用于判断是否有未保存更改
         self._loaded_cfg = dict(self.cfg)
         self._dirty = False
         self.proc = None
 
+        self._load_config()
+
     def _build_ui(self):
         row = 0
+        self._original_paths = {}
+        self._reset_buttons = {}
         def add_entry(label_text, key, browse_mode='file'):
             nonlocal row
             lbl = tk.Label(self.master, text=label_text)
             lbl.grid(row=row, column=0, sticky='w', padx=6, pady=4)
             ent = tk.Entry(self.master, width=60, state='readonly')
             ent.grid(row=row, column=1, padx=6, pady=4)
-            btn = tk.Button(self.master, text='浏览', width=8,
+            # 浏览按钮：三个小点，宽度更小
+            btn = tk.Button(self.master, text='...', width=3,
                             command=(lambda k=key, e=ent, m=browse_mode: self._on_browse(k, e, m)))
-            btn.grid(row=row, column=2, padx=6, pady=4)
+            btn.grid(row=row, column=2, padx=(2,2), pady=4)
+            # 重置按钮，初始隐藏
+            reset_btn = tk.Button(self.master, text='重置', width=4,
+                                  command=(lambda k=key, e=ent: self._on_reset_path(k, e)))
+            reset_btn.grid(row=row, column=3, padx=(2,2), pady=4)
+            reset_btn.grid_remove()
+            self._reset_buttons[key] = reset_btn
             # 状态标签（显示路径是否有效）
             st = tk.Label(self.master, text='', fg='red')
-            st.grid(row=row, column=3, padx=6, pady=4, sticky='w')
+            st.grid(row=row, column=4, padx=6, pady=4, sticky='w')
             self.status_labels[key] = st
-            # 不允许直接编辑，必须通过浏览按钮来选择，避免误输入
             row += 1
             return ent
 
@@ -87,8 +96,12 @@ class LauncherApp:
         lbl.grid(row=row, column=0, sticky='w', padx=6, pady=4)
         self.e_batch = tk.Entry(self.master, width=60, state='readonly')
         self.e_batch.grid(row=row, column=1, padx=6, pady=4)
-        btnb = tk.Button(self.master, text='浏览', width=8, command=self._browse_batch)
-        btnb.grid(row=row, column=2, padx=6, pady=4)
+        btnb = tk.Button(self.master, text='...', width=3, command=self._browse_batch)
+        btnb.grid(row=row, column=2, padx=(2,2), pady=4)
+        # 不为 batch_path 加重置按钮
+        st = tk.Label(self.master, text='', fg='red')
+        st.grid(row=row, column=4, padx=6, pady=4, sticky='w')
+        self.status_labels['batch_path'] = st
         row += 1
 
         # Buttons
@@ -96,10 +109,11 @@ class LauncherApp:
         frm.grid(row=row, column=0, columnspan=3, pady=6)
         self.btn_validate = tk.Button(frm, text='校验', command=self._validate)
         self.btn_validate.grid(row=0, column=0, padx=4)
-        self.btn_save = tk.Button(frm, text='保存配置', command=self._save_config)
+        self.btn_save = tk.Button(frm, text='保存目录', command=self._on_save_and_refresh)
         self.btn_save.grid(row=0, column=1, padx=4)
-        self.btn_run = tk.Button(frm, text='运行批处理', command=self._run_batch)
+        self.btn_run = tk.Button(frm, text='导表', command=self._run_batch)
         self.btn_run.grid(row=0, column=2, padx=4)
+        self._button_frame = frm
         row += 1
 
         # Output area
@@ -128,6 +142,12 @@ class LauncherApp:
             self._validate_and_show_status(key)
             # 标记为脏
             self._dirty = any(self.cfg.get(k) != self._loaded_cfg.get(k) for k in ('python_exe', 'excel_root', 'output_project', 'cs_output', 'enum_output', 'batch_path'))
+            if key in self._reset_buttons:
+                if self.cfg.get(key) != self._original_paths.get(key, ''):
+                    self._reset_buttons[key].grid()
+                else:
+                    self._reset_buttons[key].grid_remove()
+            self._refresh_action_buttons()
 
     def _set_entry_value(self, entry_widget, value: str):
         # 由于 Entry 设为 readonly，临时切换状态以写入值
@@ -226,6 +246,10 @@ class LauncherApp:
                      ('enum_output', self.e_enum_output), ('batch_path', self.e_batch)):
             v = self.cfg.get(k) or ''
             self._set_entry_value(e, v)
+            self._original_paths[k] = v
+            # 初始时隐藏重置按钮
+            if hasattr(self, '_reset_buttons') and k in self._reset_buttons:
+                self._reset_buttons[k].grid_remove()
 
         # 绑定关闭事件以确保可清理子进程
         try:
@@ -234,6 +258,9 @@ class LauncherApp:
             pass
         # 打开时立即校验并显示状态
         self._validate_and_show_status()
+        # 新增：首次加载后刷新按钮区，避免初始时两个按钮都显示
+        if hasattr(self, '_refresh_action_buttons'):
+            self._refresh_action_buttons()
 
     def _on_field_changed(self, key: str):
         # 更新 cfg，并比较是否与加载时相同
@@ -283,13 +310,20 @@ class LauncherApp:
                 continue
             val = self.cfg.get(k) or ''
             ok = checks.get(k, lambda v: False)(val)
-            if ok:
-                lbl.config(text='有效', fg='green')
-            else:
-                if not val:
-                    lbl.config(text='空', fg='orange')
+            # 新增：导出路径不含Assets时高亮黄色tip
+            if k in ('output_project', 'cs_output', 'enum_output') and ok:
+                if 'assets' not in str(val).replace('\\', '/').lower():
+                    lbl.config(text='非Unity目录', fg='orange')
                 else:
-                    lbl.config(text='无效', fg='red')
+                    lbl.config(text='有效', fg='green')
+            else:
+                if ok:
+                    lbl.config(text='有效', fg='green')
+                else:
+                    if not val:
+                        lbl.config(text='空', fg='orange')
+                    else:
+                        lbl.config(text='无效', fg='red')
 
     def _parse_batch_file(self, path: Path) -> dict:
         """解析批处理文件中的 set 变量或 direct python 调用，返回映射到 GUI 字段的字典。
@@ -484,6 +518,18 @@ class LauncherApp:
             messagebox.showerror('运行失败', f'批处理不存在: {batch_path}')
             return
 
+        # 检查所有导出路径是否包含Assets
+        def _contains_assets(*paths):
+            for p in paths:
+                if p and 'assets' in str(p).replace('\\', '/').lower():
+                    return True
+            return False
+
+        need_confirm = not _contains_assets(self.cfg.get('output_project'), self.cfg.get('cs_output'), self.cfg.get('enum_output'))
+        if need_confirm:
+            ok = messagebox.askyesno('非Unity目录', '导出路径不包含“Assets”，这通常不是Unity项目目录，是否继续导出？')
+            if not ok:
+                return
         # 一律在 GUI 中捕获输出并显示
         self.btn_run.config(state=tk.DISABLED)
         self.btn_save.config(state=tk.DISABLED)
@@ -491,7 +537,13 @@ class LauncherApp:
 
         def target():
             try:
-                cmd = ['cmd.exe', '/c', str(batch_path)]
+                # 若已确认，追加 --force-no-assets 参数
+                extra_args = []
+                if need_confirm:
+                    extra_args.append('--force-no-assets')
+                # 解析批处理内容，找到 python 调用行，拼接参数
+                # 直接用 cmd /c 执行批处理并传递参数
+                cmd = ['cmd.exe', '/c', str(batch_path)] + extra_args
                 self._append_text(f'运行: {" ".join(cmd)}\n')
                 enc = locale.getpreferredencoding(False) or 'utf-8'
                 proc = subprocess.Popen(cmd, shell=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, encoding=enc)
@@ -536,6 +588,34 @@ class LauncherApp:
         self.txt.insert(tk.END, s)
         self.txt.see(tk.END)
 
+    def _on_reset_path(self, key, entry_widget):
+        orig = self._original_paths.get(key, '')
+        self._set_entry_value(entry_widget, orig)
+        self.cfg[key] = orig
+        self._validate_and_show_status(key)
+        if key in self._reset_buttons:
+            self._reset_buttons[key].grid_remove()
+        self._dirty = any(self.cfg.get(k) != self._loaded_cfg.get(k) for k in ('python_exe', 'excel_root', 'output_project', 'cs_output', 'enum_output', 'batch_path'))
+        self._refresh_action_buttons()
+
+    def _refresh_action_buttons(self):
+        # 有未保存修改时只显示保存目录，否则只显示运行批处理
+        if self._dirty:
+            self.btn_save.grid()
+            self.btn_run.grid_remove()
+        else:
+            self.btn_save.grid_remove()
+            self.btn_run.grid()
+
+    def _on_save_and_refresh(self):
+        self._save_config()
+        # 保存后刷新原始路径和按钮区
+        for k in self._original_paths:
+            self._original_paths[k] = self.cfg.get(k, '')
+            if k in self._reset_buttons:
+                self._reset_buttons[k].grid_remove()
+        self._dirty = False
+        self._refresh_action_buttons()
 
 def main():
     root = tk.Tk()

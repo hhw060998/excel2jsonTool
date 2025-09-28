@@ -13,13 +13,24 @@ def log_info(msg: str) -> None:
     print(msg)
 
 
-def log_warn(msg: str) -> None:
-    # 保存到警告缓存，便于在最后统一汇总输出
+def log_warn(msg: str, immediate: bool = None) -> None:
+    """
+    输出 warning。immediate=True 时只打印不缓存，immediate=False 时只缓存不打印，None 时按 LOG_WARN_IMMEDIATE。
+    """
+    if immediate is True:
+        print(f"{YELLOW}[Warn] {msg}{RESET}")
+        return
+    if immediate is False:
+        try:
+            _warnings.append(str(msg))
+        except Exception:
+            pass
+        return
+    # immediate is None: 兼容原有逻辑
     try:
         _warnings.append(str(msg))
     except Exception:
         pass
-    # 只有在配置为立即打印时才输出到控制台，默认行为仅缓存
     if LOG_WARN_IMMEDIATE:
         print(f"{YELLOW}[Warn] {msg}{RESET}")
 

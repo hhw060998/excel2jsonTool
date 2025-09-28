@@ -75,9 +75,10 @@ def cleanup_files(output_folders):
     if not stale:
         log_info("没有需要删除的文件")
         return
-    log_warn("以下文件未在本次生成中出现：")
+    # 临时切换 warning 为立即输出
+    log_warn("以下文件未在本次生成中出现：", immediate=True)
     for f in stale:
-        log_warn(f" - {f}")
+        log_warn(f" - {f}", immediate=True)
     yn = input("是否删除这些文件?(y/n): ").strip().lower()
     if yn == "y":
         for f in stale:
