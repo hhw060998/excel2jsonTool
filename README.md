@@ -1,376 +1,187 @@
-# excel2jsonTool
+# SheetEase
 
-轻量、实用、可扩展的 Excel → JSON + C# 脚本导出工具。适合游戏等需要高效配置管理的场景：一键导出、严格校验、运行时高效加载与查询，并已支持“自定义类型”字段的通用与专用解析。
+轻量级、零依赖、可扩展的 Excel → JSON + C# 导出工具，专为游戏等需要高效配置管理的场景设计。
 
-This is a lightweight, extensible Excel → JSON and C# code exporter. It focuses on painless authoring for designers and fast, type-safe loading for programmers. Custom field types are supported out of the box.
+> **对比 luban**：本工具更轻量、无平台/框架依赖、易于二次开发，适合小中型项目和 Unity 工程。支持自定义类型、引用校验、GUI 批量导出，开箱即用。
 
 ---
 
-## 功能特性
+## 功能亮点
 
-- 一键导出：运行批处理即可批量导出 JSON 与 C# 访问脚本。
-- 数据校验：字段命名、类型、重复字段、重复 Sheet、主键唯一等规范检查。
-- 高效访问：C# 侧使用字典存储，查找 O(1)，并提供多种查询方法。
-- 策划友好：只需维护 Excel；字段注释、默认值、必填等校验内建。
-- 程序友好：自动生成 C# 访问类，在游戏启动时加载反序列化即可使用。
-- 自定义类型：
-	- 零注册“通用回退”模式：Excel 中填写全限定名类型（含命名空间），单元格用 `#` 分隔成员数据，导出为通用 JSON 对象，C# 端可自行解释。
-	- 可选“专用解析器”模式：为特定类型注册解析器，导出结构更语义化（如 `Localization.LocalizedStringRef`）。
+- **一键导出**：批处理或 GUI 一键批量导出 JSON 与 C# 代码。
+- **严格校验**：字段命名、类型、主键唯一、引用关系等全流程检查。
+- **高效集成**：C# 端自动生成访问类，O(1) 查询，支持多种查询方式。
+- **自定义类型**：支持“通用回退”与“专用解析器”两种模式，灵活适配业务。
+- **易用 GUI**：可视化路径选择、配置保存、实时日志，适合策划/程序协作。
+- **零依赖**：仅需 Python 3.x，无需第三方库，易于集成到现有项目。
 
 ---
 
 ## 目录结构
 
 ```
-ExcelExportTool/        # 导表工具源码（Python）
-ExcelFolder/            # Excel 样例与导表批处理
-ProjectFolder/          # 目标工程侧示例（C#、JSON 输出示例）
+ExcelExportTool/        # Python 源码
+ExcelFolder/            # Excel 示例与批处理
+ProjectFolder/          # C# 工程与导出示例
 ```
 
 ---
 
 ## 快速上手
 
-1) 环境准备
-- 安装 Python 3.x（建议 3.10+）。
-- 打开并配置 `ExcelFolder/!【导表】.bat`：
-	- Excel 目录（导入目录）
-	- 工具目录（本仓库 `ExcelExportTool`）
-	- 导出 JSON 目录与 C# 目录
+1. **环境准备**
+   - 安装 Python 3.x（建议 3.10+）。
+   - 配置 `ExcelFolder/!【导表】.bat`：指定 Excel 目录、工具目录、输出目录。
 
-2) Excel 规范
-- 文件名：建议大写。
-- Sheet 名：需符合 C# 类命名规范（推荐驼峰式）。
-- 表头：
-	- 第 1 行：字段名
-	- 第 2 行：类型（支持基础类型与自定义类型；自定义类型需“全限定名”，如 `MyNamespace.MyType`）
-	- 第 3 行：注释（可选）
+2. **Excel 规范**
+   - 文件名建议大写，Sheet 名需符合 C# 类命名规范。
+   - 表头：第1行字段名，第2行类型（基础/自定义），第3行注释（可选）。
 
-3) 一键导出
-- 双击运行 `ExcelFolder/!【导表】.bat`，自动导出 JSON 与 C# 代码到配置的目录。
+3. **导出方式**
+   - 命令行：双击 `ExcelFolder/!【导表】.bat`。
+   - GUI：运行 `python tools/gui_export_launcher.py` 或双击 `ExcelFolder/启动导表_GUI.bat`。
+   - 路径选择、配置保存、运行导表、日志查看均在 GUI 内完成。
 
-GUI 使用
-- **启动方式**: 在仓库根目录运行:
-	- `python tools/gui_export_launcher.py`
-	或者双击 `ExcelFolder/启动导表_GUI.bat`（如果存在）。
-- **操作流程**:
-	- **选择路径**: 使用每个条目的 `浏览` 按钮选择 `Python` 可执行程序、`Excel 根目录`、输出目录等（输入框为只读，避免误输）。
-	- **保存配置**: 点击 `保存配置` 将当前设置写入或更新批处理文件（会备份原文件为 `.bak`）。
-	- **运行导表**: 点击 `运行批处理` 在 GUI 下方的 `运行输出` 区查看实时日志与进度信息。
-	- **关闭行为**: 关闭 GUI 时会尝试终止正在运行的导表子进程，确保不会留下孤立的命令窗口。
-- **注意**: GUI 会将运行日志实时打印在界面下方，用于排查导表过程中的错误与警告；所有路径必须通过 `浏览` 选择以保证合法性。
-
-4) 运行时集成（C#）
-- 将导出的 JSON 与 C# 文件加入项目。
-- 游戏启动时调用生成的加载方法，完成反序列化与索引构建，即可通过生成的 API 查询数据。
+4. **C# 集成**
+   - 将导出的 JSON 与 C# 文件加入项目，启动时加载即可。
 
 ---
 
-## 数据类型支持
+## 数据类型与自定义类型
 
-基础类型：`int`、`float`、`string/str`、`bool`
-
-容器类型：当前内置 `list(...)`、`dict(...)`（视项目扩展情况）。
-
-自定义类型（重点）：
-
-1) 通用回退模式（零注册，默认启用）
-- Excel 类型行填写全限定名（含命名空间），例如：`Localization.LocalizedStringRef`、`Gameplay.BuffParam`。
-- 单元格内容使用 `#` 分隔成员，导出 JSON 形如：
-	```json
-	{
-		"__type": "Gameplay.BuffParam",
-		"__raw": "atk#1.5#10",
-		"segments": ["atk", "1.5", "10"]
-	}
-	```
-- C# 侧可将该字段声明为可接收通用结构的类型（如 `JToken`/`object`/自定义 `GenericCustomValue`），并在运行时按业务规则解释 `segments`。
-
-2) 专用解析器模式（可选增强）
-- 对特定类型注册解析器，导出更语义化结构。例如 `Localization.LocalizedStringRef`：
-	```json
-	{ "keyHash": 0, "source": "文本", "context": "上下文" }
-	```
-- 便于运行时直接映射到 C# 结构体并进行校验、哈希重算等逻辑。需要时在 `ExcelExportTool/data_processing.py` 注册解析器函数。
-
-> 说明：如无专用解析器，均走“通用回退”模式；若希望严格要求注册，可关闭回退开关并强制校验。
+- 基础类型：`int`、`float`、`string/str`、`bool`
+- 容器类型：`list(...)`、`dict(...)`
+- **自定义类型**：
+  - **通用回退**（默认）：Excel 类型行填写全限定名，单元格用 `#` 分隔，导出为 `{ "__type": ..., "segments": [...] }`，C# 端自定义解析。
+  - **专用解析器**（可选）：在 `data_processing.py` 注册解析器，导出结构更语义化，C# 端可直接映射。
 
 ---
 
-## Excel 示例（自定义类型）
+## 引用校验
 
-- 类型行：`Gameplay.BuffParam`
-- 单元格取值案例：`atk#1.5#10`
-- 导出 JSON（通用回退）：
-	```json
-	{
-		"__type": "Gameplay.BuffParam",
-		"__raw": "atk#1.5#10",
-		"segments": ["atk", "1.5", "10"]
-	}
-	```
-
-如你为 `Localization.LocalizedStringRef` 注册了专用解析器，则：
-- 类型行：`Localization.LocalizedStringRef`
-- 单元格：`Play#UI`（`#` 前后可换行，导出时会标准化换行）
-- 导出 JSON（专用结构）：
-	```json
-	{ "keyHash": 0, "source": "Play", "context": "UI" }
-	```
+- 字段名可加 `[Sheet/Field]` 前缀，自动检查引用存在性与类型一致性。
+- 支持 list(T) 元素级校验，dict 类型会警告并跳过。
+- 所有引用校验在导出后统一进行，错误/警告不会中断导表。
 
 ---
 
-## 引用检查（新功能）
+## 常见问题（FAQ）
 
-- 语法：在“字段名”前添加前缀 `[Sheet/Field]` 或 `[Sheet]`，方括号后的部分是“真实字段名”。
-	- `[RefExample]ref_id` 等价于 `[RefExample/id]ref_id`（省略字段名默认引用 `id` 列）。
-	- `[RefExample/id]ref_id` 显式引用 `RefExample` 表的 `id` 列。
-- 检查时机：导出完所有 JSON 后统一进行（避免导出顺序依赖）。
-- 检查内容：
-	- 存在性：该字段的取值必须出现在目标表的被引用列中；否则打印错误（不终止导表）。
-	- 类型匹配：该字段声明的基础类型需与被引用列的基础类型一致（`int/float/string/bool`）。
-	- 列表类型：`list(T)` 将逐元素进行类型与存在性校验。
-	- 字典类型：若标注了引用，将打印一次警告并跳过检查（包含两种类型暂不处理）。
-- 找不到目标表 JSON：打印警告并跳过该引用检查。
-
-示例：在 `SampleConfig` 表的 `ref_id` 字段填写 `[RefExample]ref_id`，表示该字段的值来源于 `RefExample` 表的第一数据列（默认 `id`）。
-
-日志说明：以上错误/警告均不终止导表，便于一次性定位所有问题。
-
----
-
-## 常见校验与错误
-
-- 重复字段、重复 Sheet → 导出报错并定位。
-- 主键重复 → 明确指出冲突的行号与键值。
-- 类型不支持 → 标注字段名与 Sheet 名，便于快速修正。
-- 自定义类型：
-	- 开启“通用回退”时：任何全限定名类型均可导出；解析失败将保留原始串并抛出清晰错误。
-	- 关闭“通用回退”时：未注册的自定义类型直接报错，强制规范化。
-
----
-
-## C# 端集成提示
-
-- 自动生成的 C# 访问类位于 `ProjectFolder/ConfigData/AutoGeneratedScript/`（示例）。
-- 运行时反序列化使用字典存储，查询 O(1)。
-- 若字段采用自定义类型的“通用回退”结构，建议：
-	- 定义一个承载类型（例如 `GenericCustomValue`，含 `__type`/`__raw`/`segments`）。
-	- 或使用 `Newtonsoft.Json.Linq.JToken`/`object` 并在业务层进行转换。
-- 若采用“专用解析器”，请确保对应 C# 结构体已添加 JSON 特性（如 `[JsonProperty]` 或 `[JsonConstructor]`），以保证反序列化成功。
-
----
-
-## 进阶与扩展
-
-- 类型别名：可添加一层映射（短名 → 全限定名）提升 Excel 可读性。
-- 自定义类型数组：可通过多列或自定义分隔符实现；如需原生语法支持（`Type[]`），可扩展导表脚本。
-- 构建裁剪：开发期导出更详细调试信息（如 `source/context`），发布期裁剪为最小字段。
-- Manifest：导出时生成类型清单，启动期统一校验是否存在对应 C# 类型（可选）。
+- **Q: 新增自定义类型需要改 Python 吗？**
+  - 不需要，通用回退已支持任意类型，仅需专用结构时注册解析器。
+- **Q: C# 如何处理自定义类型？**
+  - 用通用结构（`__type`+`segments`）或自定义类，业务层解释。
+- **Q: 支持数组/字典嵌套自定义类型吗？**
+  - 支持，list/dict 可嵌套，复杂场景可扩展解析器。
+- **Q: 与 luban 有何区别？**
+  - luban 功能更全、支持多语言/格式，适合大型项目；本工具更轻量、易用、零依赖，适合快速集成和定制。
 
 ---
 
 ## 示例与参考
 
 - Excel 示例：`ExcelFolder/SL示例.xlsx`、`ExcelFolder/SL组合key示例.xlsx`
-- 自动生成 C# 示例：`ProjectFolder/ConfigData/AutoGeneratedScript/`
+- 自动生成 C#：`ProjectFolder/ConfigData/AutoGeneratedScript/`
 - JSON 示例：`ProjectFolder/Json/`
-
----
-
-## 常见问题（FAQ）
-
-Q: 新增一种自定义类型，是否必须修改 Python？
-- 不需要。通用回退模式已支持任何全限定名类型（`#` 分段）。仅在需要“专用结构”输出时，才需要注册解析器。
-
-Q: 自定义类型成员的具体数据类型不固定，如何在 C# 侧处理？
-- 使用通用结构（`__type` + `segments`）并在业务层解释；或为该类型定义明确的 C# 结构并配合专用解析器。
-
-Q: 数组/字典内嵌自定义类型？
-- 可通过扩展解析器支持，或暂以多列策略表达。需要时可按项目约定扩展导表逻辑。
-
----
-
-## 更复杂场景建议
-
-若需要多数据源（不仅限 Excel）、更多导出格式（如二进制/Lua）、复杂引用校验等高级能力，可结合行业工具（如 luban）或在本工具基础上定制开发。
 
 ---
 
 ## License
 
-本仓库包含的代码和示例以仓库根目录的 `LICENSE` 为准。
+本仓库代码和示例以根目录 `LICENSE` 为准。
 
 ---
 
 # English Version
 
-## excel2jsonTool
+## SheetEase
 
-A lightweight, practical, and extensible Excel → JSON plus C# code exporter. Designed for game projects and similar scenarios: one-click export, strict validation, and O(1) lookups at runtime. Custom field types are supported via a generic fallback or dedicated parsers.
+A lightweight, dependency-free, and extensible Excel → JSON + C# exporter, designed for efficient config management in games and similar projects.
+
+> **Compared to luban**: This tool is lighter, has no platform/framework dependencies, and is easy to extend. It is ideal for small/medium projects and Unity. Supports custom types, reference checks, and GUI batch export out of the box.
+
+---
 
 ## Highlights
 
-- One-click export: run a batch and export both JSON and C# access code.
-- Data validation: checks field naming, type consistency, duplicate fields, duplicate sheets, and primary key uniqueness.
-- Fast runtime access: generated C# uses dictionaries for O(1) lookups with multiple query helpers.
-- Designer-friendly: work only with Excel; comments, defaults, and required checks are built-in.
-- Programmer-friendly: generated C# loaders deserialize and index data at startup.
-- Custom field types:
-	- Generic fallback (no registration): declare fully qualified type names in Excel; use `#` to split cell content into segments; exported to a generic JSON object that you can interpret in C#.
-	- Dedicated parsers (optional): register per-type parsers to emit semantic JSON (e.g., `Localization.LocalizedStringRef`).
+- **One-click export**: Batch or GUI export of JSON and C# code.
+- **Strict validation**: Checks for field naming, types, primary key uniqueness, and references.
+- **Efficient integration**: Auto-generated C# accessors, O(1) queries, multiple query helpers.
+- **Custom types**: Supports both generic fallback and dedicated parser modes.
+- **User-friendly GUI**: Visual path selection, config saving, real-time logs.
+- **Zero dependencies**: Only needs Python 3.x, no third-party libraries.
+
+---
 
 ## Structure
 
 ```
-ExcelExportTool/        # Python exporter
-ExcelFolder/            # Sample Excels and the export batch
-ProjectFolder/          # Example target project (C#/JSON outputs)
+ExcelExportTool/        # Python source
+ExcelFolder/            # Excel samples and batch
+ProjectFolder/          # C# project and export samples
 ```
-
-## Quick Start
-
-1) Requirements
-- Python 3.x (3.10+ recommended).
-- Edit `ExcelFolder/!【导表】.bat` to set:
-	- Excel source directory
-	- Tool directory (this repo's `ExcelExportTool`)
-	- Output directories for JSON and C#
-
-2) Excel Convention
-- File name: UPPERCASE recommended.
-- Sheet name: follow C# class naming (camelCase recommended).
-- Header rows:
-	- Row 1: field names
-	- Row 2: types (basic or custom; custom must be fully qualified, e.g. `MyNamespace.MyType`)
-	- Row 3: comments (optional)
-
-3) Export
-- Double-click `ExcelFolder/!【导表】.bat` to export JSON and C#.
-
-4) Runtime (C#)
-- Add exported JSON and C# to your project.
-- Call the generated load method at startup; then use the generated APIs to query data.
-
-## Data Types
-
-Basic: `int`, `float`, `string/str`, `bool`
-
-Containers: `list(...)`, `dict(...)` (depending on your setup).
-
-Custom types:
-
-1) Generic fallback (no registration, enabled by default)
-- In Excel, specify a fully qualified type name (contains a dot), e.g. `Localization.LocalizedStringRef`, `Gameplay.BuffParam`.
-- Cell value uses `#` to split members. Exported JSON:
-	```json
-	{
-		"__type": "Gameplay.BuffParam",
-		"__raw": "atk#1.5#10",
-		"segments": ["atk", "1.5", "10"]
-	}
-	```
-- In C#, receive it as a generic structure (e.g., `JToken`, `object`, or a `GenericCustomValue` class) and interpret `segments` by your business rules.
-
-2) Dedicated parsers (optional)
-- Register a parser in `ExcelExportTool/data_processing.py` for specific types to emit semantic JSON. Example for `Localization.LocalizedStringRef`:
-	```json
-	{ "keyHash": 0, "source": "Play", "context": "UI" }
-	```
-
-## Example (Custom Type)
-
-- Type row: `Gameplay.BuffParam`
-- Cell value: `atk#1.5#10`
-- Exported JSON (generic fallback):
-	```json
-	{
-		"__type": "Gameplay.BuffParam",
-		"__raw": "atk#1.5#10",
-		"segments": ["atk", "1.5", "10"]
-	}
-	```
-
-If you registered a dedicated parser for `Localization.LocalizedStringRef`:
-- Type row: `Localization.LocalizedStringRef`
-- Cell value: `Play#UI` (line breaks around `#` are normalized)
-- Exported JSON (dedicated):
-	```json
-	{ "keyHash": 0, "source": "Play", "context": "UI" }
-	```
-
-## Validation & Errors
-
-- Duplicate fields/sheets → clear errors with locations.
-- Duplicate primary keys → detailed conflicts with row numbers.
-- Unsupported types → errors indicate field and sheet for quick fixes.
-- Custom types:
-	- With generic fallback: any fully qualified type can export; parse errors preserve the raw string in logs.
-	- If fallback is disabled: unregistered types cause errors for stricter enforcement.
 
 ---
 
-## Reference Checks (New)
+## Quick Start
 
-- Syntax: add a prefix before the field name — `[Sheet/Field]` or `[Sheet]`; the part after `]` is the actual field name.
-	- `[RefExample]ref_id` equals `[RefExample/id]ref_id` (omitted field defaults to `id`).
-	- `[RefExample/id]ref_id` explicitly references column `id` in `RefExample`.
-- Timing: performed after all JSON files are exported (order-independent).
-- What is validated:
-	- Existence: the referencing value must exist in the target column; otherwise an error is logged (export continues).
-	- Type match: the declared base type must match the target column base type (`int/float/string/bool`).
-	- Lists: `list(T)` validates each element for both type and existence.
-	- Dictionaries: if a dictionary field is annotated with a reference, a warning is logged and the check is skipped (two-type case not handled yet).
-- Missing target JSON: logs a warning and skips that check.
+1. **Requirements**
+   - Python 3.x (3.10+ recommended).
+   - Edit `ExcelFolder/!【导表】.bat` to set Excel, tool, and output directories.
 
-Example: in sheet `SampleConfig`, `[RefExample]ref_id` means this field references the first data column of `RefExample` (defaults to `id`).
+2. **Excel Convention**
+   - File name: UPPERCASE recommended; sheet name: C# class naming.
+   - Header: row 1 field names, row 2 types (basic/custom), row 3 comments (optional).
 
-Notes: errors/warnings do not stop the export, allowing you to fix all issues in one pass.
+3. **Export**
+   - CLI: Double-click `ExcelFolder/!【导表】.bat`.
+   - GUI: Run `python tools/gui_export_launcher.py` or double-click `ExcelFolder/启动导表_GUI.bat`.
+   - All path selection, config, export, and logs are in the GUI.
 
-## C# Integration Tips
+4. **C# Integration**
+   - Add exported JSON and C# to your project, load at startup.
 
-- Generated C# lives under `ProjectFolder/ConfigData/AutoGeneratedScript/` (example).
-- Runtime uses dictionaries for O(1) retrieval.
-- For the generic custom-type structure, either:
-	- Define a `GenericCustomValue` (with `__type`/`__raw`/`segments`), or
-	- Use `Newtonsoft.Json.Linq.JToken`/`object` and convert in business logic.
-- For dedicated parsers, ensure corresponding C# structs/classes include proper JSON attributes (`[JsonProperty]`, `[JsonConstructor]`, etc.).
+---
 
-## Advanced
+## Data Types & Custom Types
 
-- Type aliases: map short names to fully qualified names for readability.
-- Custom-type arrays: express via multiple columns or add syntax (`Type[]`) by extending the exporter.
-- Build-time trimming: verbose fields in dev builds, minimal fields in release.
-- Manifest: export a custom-type list and validate presence at startup (optional).
+- Basic: `int`, `float`, `string/str`, `bool`
+- Containers: `list(...)`, `dict(...)`
+- **Custom types**:
+  - **Generic fallback** (default): Type row is fully qualified, cell uses `#` to split, exports as `{ "__type": ..., "segments": [...] }`, parse in C# as needed.
+  - **Dedicated parser** (optional): Register in `data_processing.py` for semantic JSON, map directly in C#.
+
+---
+
+## Reference Checks
+
+- Field names can have `[Sheet/Field]` prefix for auto existence/type checks.
+- Supports list(T) element checks; dict fields are warned and skipped.
+- All checks run after export; errors/warnings do not stop export.
+
+---
+
+## FAQ
+
+- **Q: Do I need to modify Python for new custom types?**
+  - No, generic fallback supports any type; only register a parser for special structure.
+- **Q: How to handle custom types in C#?**
+  - Use the generic structure (`__type`+`segments`) or a custom class, interpret in business logic.
+- **Q: Are arrays/dicts of custom types supported?**
+  - Yes, list/dict can nest custom types; extend parser for complex cases.
+- **Q: How is this different from luban?**
+  - luban is more feature-rich and supports more formats/languages for large projects; this tool is lighter, easier, and dependency-free for quick integration and customization.
+
+---
 
 ## Examples
 
-- Excel samples: `ExcelFolder/SL示例.xlsx`, `ExcelFolder/SL组合key示例.xlsx`
-- Generated C#: `ProjectFolder/ConfigData/AutoGeneratedScript/`
-- JSON samples: `ProjectFolder/Json/`
+- Excel: `ExcelFolder/SL示例.xlsx`, `ExcelFolder/SL组合key示例.xlsx`
+- C#: `ProjectFolder/ConfigData/AutoGeneratedScript/`
+- JSON: `ProjectFolder/Json/`
+
+---
 
 ## License
 
 See `LICENSE` at the repository root.
-
----
-
-## GUI Usage (English)
-
-- **How to start**: from the repository root run:
-	- `python tools/gui_export_launcher.py`
-	or double-click `ExcelFolder/启动导表_GUI.bat` if present.
-- **Workflow**:
-	- **Select paths**: use each `Browse` button to pick the Python executable, Excel root, and output directories (fields are read-only to avoid typos).
-	- **Save config**: click `Save Config` to write/update a batch file (original file is backed up with `.bak`).
-	- **Run export**: click `Run Batch` — realtime logs and progress appear in the `Run Output` area at the bottom of the GUI.
-	- **Close behavior**: closing the GUI will attempt to terminate any running export subprocess.
-- **Note**: the GUI prints runtime logs in the interface for troubleshooting; always select paths via `Browse`.
-
-## Example Screenshots
-
-Add screenshots under `docs/` (or `assets/`) and reference them here. Example embeds included below use SVG placeholders added to the repository:
-
-![GUI - Main Window](docs/gui_main.png)
-
-If you prefer multiple screenshots, add them under `docs/` and reference them similarly.
