@@ -10,7 +10,7 @@ import shutil
 import traceback
 from worksheet_data import WorksheetData
 from cs_generation import generate_enum_file_from_sheet, get_created_files, set_output_options
-from log import log_info, log_warn, log_error, log_success, log_sep, green_filename
+from log import log_info, log_warn, log_error, log_success, log_sep, green_filename, log_warn_summary
 from exceptions import SheetNameConflictError, ExportError
 from exceptions import InvalidFieldNameError
 from exceptions import WriteFileError
@@ -196,7 +196,37 @@ def batch_excel_to_json(
 
     elapsed = time.time() - start
     log_sep("结束")
+    # 统计本次生成的 JSON 文件总体积（仅统计已实际写入的文件）
+    try:
+        created_files = set(get_created_files())
+        total_json_bytes = 0
+        for p in created_files:
+            try:
+                if p.lower().endswith('.json') and os.path.isfile(p):
+                    total_json_bytes += os.path.getsize(p)
+            except Exception:
+                # 忽略单个文件统计失败
+                pass
+
+        def _human_bytes(n: int) -> str:
+            # 简单的人类可读格式
+            if n < 1024:
+                return f"{n} B"
+            if n < 1024 * 1024:
+                return f"{n/1024:.1f} KB"
+            return f"{n/1024/1024:.2f} MB"
+
+        total_json_str = _human_bytes(total_json_bytes)
+    except Exception:
+        total_json_bytes = 0
+        total_json_str = "N/A"
+
+    # 在打印最终结果前统一输出所有警告，便于快速查看
+    try:
+        log_warn_summary("以下为本次运行收集到的所有警告：")
+    except Exception:
+        pass
     if aborted:
-        log_error(f"导表已中止: 字段命名不合法，已停止后续处理。成功 {ok}，跳过 {skip}，总耗时 {elapsed:.2f}s")
+        log_error(f"导表已中止: 字段命名不合法，已停止后续处理。成功 {ok}，跳过 {skip}，总耗时 {elapsed:.2f}s，总生成 JSON 大小: {total_json_str}")
     else:
-        log_success(f"成功 {ok}，跳过 {skip}，总耗时 {elapsed:.2f}s diff_only={diff_only} dry_run={dry_run}")
+        log_success(f"成功 {ok}，跳过 {skip}，总耗时 {elapsed:.2f}s，总生成 JSON 大小: {total_json_str}. diff_only:{diff_only}, dry_run:{dry_run}")

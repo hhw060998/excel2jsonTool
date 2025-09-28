@@ -24,6 +24,8 @@ from naming_config import (
     JSON_ID_FIRST,
     REFERENCE_ALLOW_EMPTY_INT_VALUES,
     REFERENCE_ALLOW_EMPTY_STRING_VALUES,
+    JSON_WARN_TOTAL_BYTES,
+    JSON_WARN_RECORD_BYTES,
 )
 
 # 新增：可选字段统计开关（保持功能不变，默认打印一次汇总；若不需要可改为 False）
@@ -409,6 +411,11 @@ class WorksheetData:
             s = str(v)
             return s if len(s) <= limit else s[:limit] + "..."
 
+        # To avoid memory explosion, monitor serialized sizes.
+        # We check per-record serialized size opportunistically and full-JSON size after serialization.
+        record_check_interval = 50  # 每多少条记录进行一次轻量检查（默认每50条）
+        oversized_record_warned = False
+
         for row_idx, row in enumerate(self.row_data):
             if not row:
                 continue
@@ -500,12 +507,34 @@ class WorksheetData:
                 row_obj["id"] = int(row_key)
             data[row_key] = row_obj
 
+            # Opportunistic per-record size check (only until we warn once to save time)
+            if (not oversized_record_warned) and (row_idx % record_check_interval == 0):
+                try:
+                    # 快速测量单条记录序列化尺寸
+                    rec_bytes = json.dumps(row_obj, ensure_ascii=False).encode('utf-8')
+                    if len(rec_bytes) > JSON_WARN_RECORD_BYTES:
+                        log_warn(f"[{self.name}] 行{excel_row} 序列化单条记录大小过大: {len(rec_bytes)} bytes (> {JSON_WARN_RECORD_BYTES}). 此表可能会导致内存或磁盘问题。")
+                        oversized_record_warned = True
+                except Exception:
+                    # 不应阻塞主流程，忽略序列化异常的大小检查
+                    pass
+
         file_content = json.dumps(
             data,
             ensure_ascii=False,
             indent=4,
             sort_keys=JSON_SORT_KEYS
         )
+
+        # 全量 JSON 大小检查
+        try:
+            total_bytes = file_content.encode('utf-8')
+            total_len = len(total_bytes)
+            if total_len > JSON_WARN_TOTAL_BYTES:
+                log_warn(f"[{self.name}] 序列化后的 JSON 总大小为 {total_len} bytes (> {JSON_WARN_TOTAL_BYTES}). 请检查表格是否过大或包含不应导出的数据。")
+        except Exception:
+            # 不要阻塞写入：继续写文件并记录日志
+            log_warn(f"[{self.name}] 无法计算序列化后的 JSON 大小")
         from cs_generation import write_to_file
         file_path = os.path.join(output_folder, JSON_FILE_PATTERN.format(name=self.name))
         write_to_file(file_content, file_path)
