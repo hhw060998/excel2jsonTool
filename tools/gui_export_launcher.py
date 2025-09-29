@@ -542,12 +542,13 @@ class LauncherApp:
                 extra_args = []
                 if need_confirm:
                     extra_args.append('--force-no-assets')
-                # 解析批处理内容，找到 python 调用行，拼接参数
-                # 直接用 cmd /c 执行批处理并传递参数
                 cmd = ['cmd.exe', '/c', str(batch_path)] + extra_args
                 self._append_text(f'运行: {" ".join(cmd)}\n')
                 enc = locale.getpreferredencoding(False) or 'utf-8'
-                proc = subprocess.Popen(cmd, shell=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, encoding=enc)
+                import os
+                env = os.environ.copy()
+                env['SHEETEASE_GUI'] = '1'
+                proc = subprocess.Popen(cmd, shell=False, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, encoding=enc, env=env)
                 self.proc = proc
                 for line in proc.stdout:
                     self._append_text(line)

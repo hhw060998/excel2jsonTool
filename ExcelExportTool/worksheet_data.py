@@ -34,6 +34,30 @@ from naming_config import (
 _PRINT_FIELD_SUMMARY = True
 
 
+def user_confirm(msg: str, title: str = "用户确认") -> bool:
+    """
+    统一的用户确认函数：命令行用input，GUI用弹窗。
+    返回True表示继续，False表示取消。
+    """
+    import os
+    if os.environ.get('SHEETEASE_GUI', '') == '1':
+        try:
+            import tkinter as tk
+            from tkinter import messagebox
+            root = tk._default_root or tk.Tk()
+            root.withdraw()
+            res = messagebox.askyesno(title, msg)
+            return bool(res)
+        except Exception:
+            print(msg)
+            ans = input().strip().lower()
+            return ans in ("y", "yes")
+    else:
+        print(msg)
+        ans = input().strip().lower()
+        return ans in ("y", "yes")
+
+
 class WorksheetData:
     """
     处理单个 Worksheet 的数据导出逻辑。
@@ -198,25 +222,10 @@ class WorksheetData:
             for fname, actual, expect in wrongs:
                 msg += f"  - {fname} 字段类型为 {actual}，应为 {expect}\n"
             msg += "这将导致生成的 C# 脚本无法通过编译。\n是否继续导出？(y/n)"
-            if os.environ.get('SHEETEASE_GUI', '') == '1':
-                try:
-                    import tkinter as tk
-                    from tkinter import messagebox
-                    root = tk._default_root or tk.Tk()
-                    root.withdraw()
-                    res = messagebox.askyesno("字段类型警告", msg)
-                    if not res:
-                        raise RuntimeError("用户取消导出：接口字段类型不符")
-                except Exception:
-                    print(msg)
-                    ans = input().strip().lower()
-                    if ans not in ("y", "yes"):
-                        raise RuntimeError("用户取消导出：接口字段类型不符")
+            if user_confirm(msg):
+                log_warn("用户选择继续导出")
             else:
-                print(msg)
-                ans = input().strip().lower()
-                if ans not in ("y", "yes"):
-                    raise RuntimeError("用户取消导出：接口字段类型不符")
+                raise RuntimeError("用户取消导出：接口字段类型不符")
 
     def _check_id_name_field_types(self):
         """
@@ -235,26 +244,10 @@ class WorksheetData:
             if name_wrong:
                 msg += f"  - name 字段类型为 {name_type}，应为 string\n"
             msg += "这将导致生成的 C# 脚本无法通过编译。\n是否继续导出？(y/n)"
-            import os
-            if os.environ.get('SHEETEASE_GUI', '') == '1':
-                try:
-                    import tkinter as tk
-                    from tkinter import messagebox
-                    root = tk._default_root or tk.Tk()
-                    root.withdraw()
-                    res = messagebox.askyesno("字段类型警告", msg)
-                    if not res:
-                        raise RuntimeError("用户取消导出：id/name 字段类型不符")
-                except Exception:
-                    print(msg)
-                    ans = input().strip().lower()
-                    if ans not in ("y", "yes"):
-                        raise RuntimeError("用户取消导出：id/name 字段类型不符")
+            if user_confirm(msg):
+                log_warn("用户选择继续导出")
             else:
-                print(msg)
-                ans = input().strip().lower()
-                if ans not in ("y", "yes"):
-                    raise RuntimeError("用户取消导出：id/name 字段类型不符")
+                raise RuntimeError("用户取消导出：id/name 字段类型不符")
 
     def _need_generate_keys(self) -> bool:
         """判断是否需要为数据行生成自增 key（原逻辑）"""

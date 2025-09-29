@@ -6,6 +6,7 @@
 from export_process import batch_excel_to_json
 
 import sys
+from worksheet_data import user_confirm
 
 # 兼容原参数顺序:
 # root_folder project_output csfile_output enum_output
@@ -37,9 +38,8 @@ def _contains_assets(*paths):
     return False
 
 if not force_no_assets and not _contains_assets(output_project_folder, csfile_output_folder, enum_output_folder):
-    print("警告：导出路径不包含 'Assets'，这通常不是 Unity 项目目录。是否继续导出？(y/n): ", end="", flush=True)
-    ans = input().strip().lower()
-    if ans != "y":
+    msg = "警告：导出路径不包含 'Assets'，这通常不是 Unity 项目目录。是否继续导出？(y/n): "
+    if not user_confirm(msg, title="导出路径警告"):
         print("已取消导出。")
         sys.exit(1)
 

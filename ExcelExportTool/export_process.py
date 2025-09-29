@@ -79,8 +79,9 @@ def cleanup_files(output_folders):
     log_warn("以下文件未在本次生成中出现：", immediate=True)
     for f in stale:
         log_warn(f" - {f}", immediate=True)
-    yn = input("是否删除这些文件?(y/n): ").strip().lower()
-    if yn == "y":
+    from worksheet_data import user_confirm
+    msg = "是否删除这些文件?(y/n): "
+    if user_confirm(msg, title="文件删除确认"):
         for f in stale:
             try:
                 f.unlink(missing_ok=True)
