@@ -158,6 +158,7 @@ class WorksheetData:
             if not is_valid_csharp_identifier(actual):
                 raise InvalidFieldNameError(actual, i, self.name)
 
+
         if not self._has_effective_data:
             log_warn(f"表[{self.name}] 没有有效数据行（将生成空 JSON）。")
 
@@ -166,6 +167,94 @@ class WorksheetData:
                 f"[{self.name}] 字段统计: 总列={len(self.field_names)} 可用列(含主键)={len(self.field_names)} "
                 f"ignore列={self._ignore_count} required列={len(self._required_fields)}"
             )
+
+
+        # 新增：自动检测接口字段类型，类型不符时警告并要求用户确认
+        self._check_interface_field_types()
+
+    def _check_interface_field_types(self):
+        """
+        自动解析 IConfigRawInfo.cs，获取接口字段及类型，对所有同名字段类型不符的都进行检查和提示。
+        """
+        import re
+        interface_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ProjectFolder", "ConfigData", "IConfigRawInfo.cs")
+        if not os.path.exists(interface_path):
+            return
+        with open(interface_path, encoding="utf-8") as f:
+            content = f.read()
+        # 匹配如 int id { get; } 或 string name { get; }
+        pattern = re.compile(r"(int|string|float|double|bool)\s+(\w+)\s*{[^{]*?get;[^{]*?}")
+        interface_fields = {m.group(2): m.group(1).lower() for m in pattern.finditer(content)}
+        if not interface_fields:
+            return
+        props = self._get_properties_dict()
+        wrongs = []
+        for fname, ftype in interface_fields.items():
+            actual_type = props.get(fname)
+            if actual_type is not None and actual_type.lower() != ftype:
+                wrongs.append((fname, actual_type, ftype))
+        if wrongs:
+            msg = f"表[{self.name}] 字段类型警告：\n"
+            for fname, actual, expect in wrongs:
+                msg += f"  - {fname} 字段类型为 {actual}，应为 {expect}\n"
+            msg += "这将导致生成的 C# 脚本无法通过编译。\n是否继续导出？(y/n)"
+            if os.environ.get('SHEETEASE_GUI', '') == '1':
+                try:
+                    import tkinter as tk
+                    from tkinter import messagebox
+                    root = tk._default_root or tk.Tk()
+                    root.withdraw()
+                    res = messagebox.askyesno("字段类型警告", msg)
+                    if not res:
+                        raise RuntimeError("用户取消导出：接口字段类型不符")
+                except Exception:
+                    print(msg)
+                    ans = input().strip().lower()
+                    if ans not in ("y", "yes"):
+                        raise RuntimeError("用户取消导出：接口字段类型不符")
+            else:
+                print(msg)
+                ans = input().strip().lower()
+                if ans not in ("y", "yes"):
+                    raise RuntimeError("用户取消导出：接口字段类型不符")
+
+    def _check_id_name_field_types(self):
+        """
+        检查 id 字段类型是否为 int，name 字段类型是否为 string。
+        类型不符时警告，并要求用户确认，用户拒绝则抛异常终止导出。
+        """
+        props = self._get_properties_dict()
+        id_type = props.get('id')
+        name_type = props.get('name')
+        id_wrong = id_type is not None and id_type.lower() != 'int'
+        name_wrong = name_type is not None and name_type.lower() != 'string'
+        if id_wrong or name_wrong:
+            msg = f"表[{self.name}] 字段类型警告：\n"
+            if id_wrong:
+                msg += f"  - id 字段类型为 {id_type}，应为 int\n"
+            if name_wrong:
+                msg += f"  - name 字段类型为 {name_type}，应为 string\n"
+            msg += "这将导致生成的 C# 脚本无法通过编译。\n是否继续导出？(y/n)"
+            import os
+            if os.environ.get('SHEETEASE_GUI', '') == '1':
+                try:
+                    import tkinter as tk
+                    from tkinter import messagebox
+                    root = tk._default_root or tk.Tk()
+                    root.withdraw()
+                    res = messagebox.askyesno("字段类型警告", msg)
+                    if not res:
+                        raise RuntimeError("用户取消导出：id/name 字段类型不符")
+                except Exception:
+                    print(msg)
+                    ans = input().strip().lower()
+                    if ans not in ("y", "yes"):
+                        raise RuntimeError("用户取消导出：id/name 字段类型不符")
+            else:
+                print(msg)
+                ans = input().strip().lower()
+                if ans not in ("y", "yes"):
+                    raise RuntimeError("用户取消导出：id/name 字段类型不符")
 
     def _need_generate_keys(self) -> bool:
         """判断是否需要为数据行生成自增 key（原逻辑）"""
