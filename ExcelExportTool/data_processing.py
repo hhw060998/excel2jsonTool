@@ -5,10 +5,10 @@
 
 import re
 from typing import Any, Callable, Dict, List, Optional
-from exceptions import UnknownCustomTypeError, CustomTypeParseError
-from log import log_warn
-from naming_utils import is_valid_csharp_identifier
-from type_utils import parse_type_annotation
+from .exceptions import UnknownCustomTypeError, CustomTypeParseError
+from .log import log_warn
+from .naming_utils import is_valid_csharp_identifier
+from .type_utils import parse_type_annotation
 import re
 
 

@@ -4,7 +4,7 @@
 # All rights reserved
 
 import sys
-from export_process import batch_excel_to_json
+from .export_process import batch_excel_to_json
 
 
 if len(sys.argv) < 3:

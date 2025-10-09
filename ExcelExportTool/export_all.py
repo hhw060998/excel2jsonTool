@@ -3,10 +3,10 @@
 # MIT License 
 # All rights reserved
 
-from export_process import batch_excel_to_json
+from .export_process import batch_excel_to_json
 
 import sys
-from worksheet_data import user_confirm
+from .worksheet_data import user_confirm
 
 # 兼容原参数顺序:
 # root_folder project_output csfile_output enum_output

@@ -6,20 +6,20 @@ import os
 from typing import Any, Dict, List, Optional, Tuple, Iterator
 from collections import defaultdict
 
-from cs_generation import generate_script_file, generate_enum_file
-from excel_processing import read_cell_values, check_repeating_values
-from data_processing import convert_to_type, available_csharp_enum_name
-from naming_utils import is_valid_csharp_identifier
-from type_utils import parse_type_annotation, convert_type_to_csharp
-from log import log_warn, log_error, log_info
-from exceptions import (
+from .cs_generation import generate_script_file, generate_enum_file
+from .excel_processing import read_cell_values, check_repeating_values
+from .data_processing import convert_to_type, available_csharp_enum_name
+from .naming_utils import is_valid_csharp_identifier
+from .type_utils import parse_type_annotation, convert_type_to_csharp
+from .log import log_warn, log_error, log_info
+from .exceptions import (
     InvalidEnumNameError,
     DuplicatePrimaryKeyError,
     CompositeKeyOverflowError,
     InvalidFieldNameError,
     HeaderFormatError,
 )
-from naming_config import (
+from .naming_config import (
     JSON_FILE_PATTERN,
     ENUM_KEYS_SUFFIX,
     JSON_SORT_KEYS,
@@ -201,7 +201,19 @@ class WorksheetData:
         自动解析 IConfigRawInfo.cs，获取接口字段及类型，对所有同名字段类型不符的都进行检查和提示。
         """
         import re
-        interface_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ProjectFolder", "ConfigData", "IConfigRawInfo.cs")
+        base_dir = os.path.dirname(os.path.dirname(__file__))
+        interface_path = os.path.join(base_dir, "ProjectFolder", "ConfigData", "IConfigRawInfo.cs")
+        if not os.path.exists(interface_path):
+            # 在 PyInstaller 环境下尝试 _MEIPASS
+            try:
+                import sys
+                meipass = getattr(sys, '_MEIPASS', None)
+                if meipass:
+                    alt = os.path.join(meipass, "ProjectFolder", "ConfigData", "IConfigRawInfo.cs")
+                    if os.path.exists(alt):
+                        interface_path = alt
+            except Exception:
+                pass
         if not os.path.exists(interface_path):
             return
         with open(interface_path, encoding="utf-8") as f:
@@ -619,7 +631,7 @@ class WorksheetData:
         except Exception:
             # 不要阻塞写入：继续写文件并记录日志
             log_warn(f"[{self.name}] 无法计算序列化后的 JSON 大小")
-        from cs_generation import write_to_file
+        from .cs_generation import write_to_file
         file_path = os.path.join(output_folder, JSON_FILE_PATTERN.format(name=self.name))
         write_to_file(file_content, file_path)
 
