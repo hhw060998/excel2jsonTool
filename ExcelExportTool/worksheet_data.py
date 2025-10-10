@@ -124,6 +124,13 @@ class WorksheetData:
         self.data_labels = _align_list(self.data_labels, n_fields, None, "标签行")
         self.default_values = _align_list(self.default_values, n_fields, None, "默认值行")
 
+        # 检查隐藏行/列与合并单元格：这些可能导致解析与期望不一致
+        try:
+            self._check_hidden_and_merged()
+        except Exception:
+            # 检查失败不影响导出流程
+            pass
+
         # 数据行
         self.row_data = list(worksheet.iter_rows(min_row=7, min_col=2))
 
@@ -195,6 +202,37 @@ class WorksheetData:
 
         # 新增：自动检测接口字段类型，类型不符时警告并要求用户确认
         self._check_interface_field_types()
+
+    def _check_hidden_and_merged(self) -> None:
+        """检测隐藏行/列与合并单元格，给出可能导致解析异常的提示。"""
+        ws = self.worksheet
+        # 隐藏行
+        try:
+            hidden_rows = [idx for idx, dim in ws.row_dimensions.items() if getattr(dim, 'hidden', False)]
+        except Exception:
+            hidden_rows = []
+        if hidden_rows:
+            sample = hidden_rows[:10]
+            more = '' if len(hidden_rows) <= 10 else f" 等共{len(hidden_rows)}行"
+            log_warn(f"[{self.name}] 检测到隐藏行: {sample}{more}。隐藏行可能导致导出结果与期望不一致")
+        # 隐藏列（字母）
+        try:
+            hidden_cols = [col for col, dim in ws.column_dimensions.items() if getattr(dim, 'hidden', False)]
+        except Exception:
+            hidden_cols = []
+        if hidden_cols:
+            sample = hidden_cols[:10]
+            more = '' if len(hidden_cols) <= 10 else f" 等共{len(hidden_cols)}列"
+            log_warn(f"[{self.name}] 检测到隐藏列: {sample}{more}。隐藏列可能导致导出结果与期望不一致")
+        # 合并单元格
+        try:
+            merged_ranges = [str(r) for r in getattr(ws, 'merged_cells', None).ranges] if getattr(ws, 'merged_cells', None) else []
+        except Exception:
+            merged_ranges = []
+        if merged_ranges:
+            sample = merged_ranges[:5]
+            more = '' if len(merged_ranges) <= 5 else f" 等共{len(merged_ranges)}处"
+            log_warn(f"[{self.name}] 检测到合并单元格: {sample}{more}。合并区域可能导致读取表头或数据对齐异常，建议取消合并")
 
     def _check_interface_field_types(self):
         """
