@@ -89,7 +89,33 @@ def main():
         try:
             idx = argv.index('--config') if '--config' in argv else argv.index('-c')
             cfg_path = Path(argv[idx + 1]) if len(argv) > idx + 1 else Path('sheet_config.json')
-            cfg = json.loads(cfg_path.read_text(encoding='utf-8'))
+            try:
+                cfg = json.loads(cfg_path.read_text(encoding='utf-8'))
+            except Exception:
+                # 配置不存在或读取失败 -> 启动 GUI 进行配置
+                print(f"未找到或无法读取配置: {cfg_path}. 将启动 GUI 进行配置...")
+                try:
+                    # 在同一进程启动 GUI；用户保存后，app_main 默认写入仓库根 sheet_config.json
+                    from . import app_main as _gui
+                    _gui.main()
+                except Exception as e:
+                    print(f"启动 GUI 失败: {e}")
+                    sys.exit(1)
+                # GUI 关闭后，尝试从仓库根读取配置并复制到目标路径
+                root_cfg = Path(__file__).resolve().parents[1] / 'sheet_config.json'
+                if not root_cfg.exists():
+                    print("未检测到已保存的配置文件，请在 GUI 中点击“保存配置”后重试。")
+                    sys.exit(1)
+                try:
+                    cfg = json.loads(root_cfg.read_text(encoding='utf-8'))
+                    # 将仓库根配置同步到指定的 cfg_path，方便下次直接使用
+                    try:
+                        cfg_path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding='utf-8')
+                    except Exception:
+                        pass
+                except Exception as e:
+                    print(f"读取 GUI 保存的配置失败: {e}")
+                    sys.exit(1)
         except Exception as e:
             print(f"读取配置失败: {e}")
             sys.exit(1)

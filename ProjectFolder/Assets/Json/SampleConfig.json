@@ -1,0 +1,60 @@
+{
+    "1": {
+        "id": 1,
+        "name": "伤害增强",
+        "damage": 10,
+        "damage_increase": 0.5,
+        "attr_names": [
+            "damage",
+            "speed"
+        ],
+        "attr_values": [
+            10,
+            22,
+            32
+        ],
+        "float_values": [
+            1.5,
+            2.3,
+            0.56
+        ],
+        "dict_values1": {
+            "1": "damage",
+            "2": "speed"
+        },
+        "dict_values2": {
+            "damage": 3.3,
+            "speed": 2.5
+        },
+        "ref_id": 1
+    },
+    "2": {
+        "id": 2,
+        "name": "伤害增强",
+        "damage": 10,
+        "damage_increase": 0.5,
+        "attr_names": [
+            "damage",
+            "speed"
+        ],
+        "attr_values": [
+            10,
+            22,
+            32
+        ],
+        "float_values": [
+            1.5,
+            2.3,
+            0.56
+        ],
+        "dict_values1": {
+            "1": "damage",
+            "2": "speed"
+        },
+        "dict_values2": {
+            "damage": 3.3,
+            "speed": 2.5
+        },
+        "ref_id": 3
+    }
+}
