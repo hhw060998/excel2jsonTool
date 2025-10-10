@@ -59,9 +59,7 @@ def _strict_validate(cfg: dict, force_no_assets: bool) -> tuple[bool, str]:
         # 可创建 & 可写
         if not _is_writable_dir(v):
             return False, f"输出目录不可写: {v}"
-    if not force_no_assets:
-        if not _contains_assets(output_project, cs_output, enum_output):
-            return False, "导出路径不包含 'Assets'，这通常不是 Unity 工程的 Assets 子目录"
+    # Assets 检查仅警告，不阻止导出
     return True, ''
 
 
@@ -158,15 +156,11 @@ def main():
 
     ok, msg = _strict_validate(cfg, force_no_assets=force_no_assets)
     if not ok:
-        # 与 GUI 一致，先给出一次确认继续机会（兼容之前行为）
-        if not force_no_assets and 'Assets' in msg:
-            # 旧逻辑是询问是否继续，这里保留
-            if not user_confirm(f"警告：{msg}\n是否继续导出？(y/n): ", title="导出路径警告"):
-                print("已取消导出。")
-                sys.exit(1)
-        else:
-            print(f"配置无效：{msg}")
-            sys.exit(1)
+        print(f"配置无效：{msg}")
+        sys.exit(1)
+    # 若输出路径不在 Assets 下 -> 仅警告继续
+    if not _contains_assets(cfg.get('output_project',''), cfg.get('cs_output',''), cfg.get('enum_output','')):
+        print("[Warn] 输出路径未包含 'Assets'，这通常不是 Unity 工程的 Assets 子目录（将继续导表）")
 
     batch_excel_to_json(
         cfg['excel_root'],

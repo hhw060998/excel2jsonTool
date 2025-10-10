@@ -388,10 +388,17 @@ class MainWindow:
         except Exception:
             return False, 'Excel 根目录不可访问'
         # Unity Assets 子目录检查
+        # Unity Assets 子目录检查 -> 仅作警告，不阻止导出
+        warn_msgs = []
         if not self._is_under_assets(cfg.get('cs_output', '')):
-            return False, '导出的脚本目录应位于 Unity 工程的 Assets 子目录下'
+            warn_msgs.append('脚本目录建议位于 Unity 工程的 Assets 子目录下')
         if not self._is_under_assets(cfg.get('enum_output', '')):
-            return False, '导出的枚举目录应位于 Unity 工程的 Assets 子目录下'
+            warn_msgs.append('枚举目录建议位于 Unity 工程的 Assets 子目录下')
+        if warn_msgs:
+            try:
+                messagebox.showwarning('路径建议', '\n'.join(warn_msgs) + '\n将继续导表。')
+            except Exception:
+                pass
         return True, ''
 
     def on_save(self):
