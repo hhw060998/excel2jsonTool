@@ -19,7 +19,7 @@
 
 ## 目录结构
 
-```
+```text
 ExcelExportTool/        # Python 源码
 ExcelFolder/            # Excel 示例与批处理
 ProjectFolder/          # C# 工程与导出示例
@@ -29,21 +29,17 @@ ProjectFolder/          # C# 工程与导出示例
 
 ## 快速上手
 
-1. **环境准备**
-   - 安装 Python 3.x（建议 3.10+）。
-   - 配置 `ExcelFolder/!【导表】.bat`：指定 Excel 目录、工具目录、输出目录。
+1. **环境准备**  
+  安装 Python 3.x（建议 3.10+），并配置 `ExcelFolder/!【导表】.bat`（Excel 目录、工具目录、输出目录）。
 
-2. **Excel 规范**
-   - 文件名建议大写，Sheet 名需符合 C# 类命名规范。
-   - 表头：第1行字段名，第2行类型（基础/自定义），第3行注释（可选）。
+1. **Excel 规范**  
+  文件名建议大写（便于过滤），Sheet 名需符合 C# 类命名规范；表头依次为：第1行字段名，第2行类型（基础/自定义），第3行注释（可选）。
 
-3. **导出方式**
-   - 命令行：双击 `ExcelFolder/!【导表】.bat`。
-   - GUI：运行 `python tools/gui_export_launcher.py` 或双击 `ExcelFolder/启动导表_GUI.bat`。
-   - 路径选择、配置保存、运行导表、日志查看均在 GUI 内完成。
+1. **导出方式**  
+  命令行可双击 `ExcelFolder/!【导表】.bat`；GUI 可运行 `ExcelExportTool/app_main.py`（开发环境）或打包后的 `dist/SheetEase.exe`。路径选择、配置保存、运行导表、日志查看均在 GUI 内完成。
 
-4. **C# 集成**
-   - 将导出的 JSON 与 C# 文件加入项目，启动时加载即可。
+1. **C# 集成**  
+  将导出的 JSON 与 C# 文件加入项目，启动时加载即可。
 
 ---
 
@@ -86,15 +82,79 @@ ProjectFolder/          # C# 工程与导出示例
 
 ---
 
+## 构建与打包（Windows）
+
+推荐使用随仓库提供的脚本一键打包为独立可执行文件：
+
+1) 安装依赖（仅需 PyInstaller）
+
+```powershell
+pip install pyinstaller
+```
+
+1) 执行打包脚本
+
+```powershell
+# 生成单文件可执行（dist/SheetEase.exe）
+./build_windows.bat --onefile
+
+# 或生成文件夹分发版（dist/SheetEase/）
+./build_windows.bat
+```
+
+脚本要点：
+
+- 打包入口：`ExcelExportTool/app_main.py`
+- 可执行名：`SheetEase`
+- 通过 `--collect-submodules` 与一系列 `--hidden-import` 确保子模块完整被收集
+- 通过 `--add-data` 将 `ProjectFolder` 与 `ExcelExportTool` 作为运行数据打包，便于运行时接口校验/资源访问
+
+> 注：如果你自定义了模块或资源路径，请同步调整 `build_windows.bat` 中的参数。
+
+---
+
+## 新版 GUI 交互说明
+
+新版工具提供统一的主窗口，上部为路径配置与操作区，下部为实时日志区：
+
+- 路径配置（四项）
+  - Excel 根目录
+  - 工程 JSON 输出目录
+  - C# 脚本输出目录
+  - 枚举输出目录
+
+- 统计信息（路径下方一行提示）
+  - Excel 根目录：显示“该目录将导出N张Excel表格”（规则：递归统计 .xlsx，文件名首字母大写，且不以 `~$` 开头）
+  - 工程 JSON 输出目录：显示“该目录包含N个Json文件”（递归统计 .json）
+  - C# 脚本输出目录：显示“该目录包含N个脚本”（递归统计 .cs）
+  - 枚举输出目录：显示“该目录包含N个脚本”（递归统计 .cs）
+
+- 操作按钮
+  - 保存配置：校验路径有效性并写入根目录 `sheet_config.json`
+  - 开始导出：在后台线程中执行导表，界面不卡死
+  - 清空日志：清除下方日志区文本
+
+- 自动运行导表
+  - 窗口右侧“自动运行导表”勾选后：
+    - 下次启动自动触发一次导出（延迟约 300ms，确保 UI 就绪）
+    - 关闭窗口时会自动保存当前配置，无需手动点“保存配置”
+
+- 日志区域
+  - 黑色背景，支持 ANSI 颜色（红/绿/黄）
+  - 实时滚动显示导表过程信息
+  - 窗口拖拽仅改变日志区域的高度，上方配置区域保持紧凑
+
+---
+
 ## License
 
 本仓库代码和示例以根目录 `LICENSE` 为准。
 
 ---
 
-# English Version
+## English Version
 
-## SheetEase
+## Overview
 
 A lightweight, dependency-free, and extensible Excel → JSON + C# exporter, designed for efficient config management in games and similar projects.
 
@@ -115,7 +175,7 @@ A lightweight, dependency-free, and extensible Excel → JSON + C# exporter, des
 
 ## Structure
 
-```
+```text
 ExcelExportTool/        # Python source
 ExcelFolder/            # Excel samples and batch
 ProjectFolder/          # C# project and export samples
@@ -125,21 +185,17 @@ ProjectFolder/          # C# project and export samples
 
 ## Quick Start
 
-1. **Requirements**
-   - Python 3.x (3.10+ recommended).
-   - Edit `ExcelFolder/!【导表】.bat` to set Excel, tool, and output directories.
+1. **Requirements**  
+  Python 3.x (3.10+ recommended). Edit `ExcelFolder/!【导表】.bat` to set Excel, tool, and output directories.
 
-2. **Excel Convention**
-   - File name: UPPERCASE recommended; sheet name: C# class naming.
-   - Header: row 1 field names, row 2 types (basic/custom), row 3 comments (optional).
+1. **Excel Convention**  
+  File name: UPPERCASE recommended; sheet name should follow C# class naming. Header: row 1 field names, row 2 types (basic/custom), row 3 comments (optional).
 
-3. **Export**
-   - CLI: Double-click `ExcelFolder/!【导表】.bat`.
-   - GUI: Run `python tools/gui_export_launcher.py` or double-click `ExcelFolder/启动导表_GUI.bat`.
-   - All path selection, config, export, and logs are in the GUI.
+1. **Export**  
+  CLI: Double-click `ExcelFolder/!【导表】.bat`. GUI: Run `ExcelExportTool/app_main.py` in dev or use packaged `dist/SheetEase.exe`. All path selection, config, export, and logs are in the GUI.
 
-4. **C# Integration**
-   - Add exported JSON and C# to your project, load at startup.
+1. **C# Integration**  
+  Add exported JSON and C# to your project and load them at startup.
 
 ---
 
@@ -182,6 +238,47 @@ ProjectFolder/          # C# project and export samples
 
 ---
 
-## License
+## Build & Package (Windows)
+
+Use the provided script to build a standalone executable:
+
+1) Install dependency
+
+```powershell
+pip install pyinstaller
+```
+
+1) Build
+
+```powershell
+# Single-file executable (dist/SheetEase.exe)
+./build_windows.bat --onefile
+
+# Or directory-based distribution (dist/SheetEase/)
+./build_windows.bat
+```
+
+Notes:
+
+- Entry: `ExcelExportTool/app_main.py`
+- Name: `SheetEase`
+- Uses `--collect-submodules` and `--hidden-import` to bundle all submodules
+- Includes `ProjectFolder` and `ExcelExportTool` as runtime data via `--add-data`
+
+---
+
+## New GUI Interactions
+
+Unified main window with path config on top and logs below:
+
+- Paths (4 fields): Excel root, JSON output, C# scripts output, Enum output
+- Under each path field, a count line shows:
+  - Excel root: “Export N Excel files” (recursively count .xlsx with uppercase first letter, excluding `~$` temp files)
+  - JSON output: “Contains N Json files” (recursively count .json)
+  - C# scripts output: “Contains N scripts” (recursively count .cs)
+  - Enum output: “Contains N scripts” (recursively count .cs)
+- Buttons: Save Config (validate & write `sheet_config.json`), Start Export (runs in background), Clear Log
+- Auto Run: when checked, auto-start export on next launch and auto-save config on window close
+- Logs: black background with ANSI colors; only the log area resizes vertically when resizing the window
 
 See `LICENSE` at the repository root.
