@@ -292,8 +292,8 @@ class MainWindow:
             lbl = self.count_labels.get(key)
             if not lbl:
                 return
-            text = self._count_text_for(key, self.vars[key].get())
-            lbl.configure(text=text)
+            text, color = self._count_text_for(key, self.vars[key].get())
+            lbl.configure(text=text, fg=color)
         except Exception:
             pass
 
@@ -304,8 +304,10 @@ class MainWindow:
         except Exception:
             return 0
 
-    def _count_text_for(self, key: str, path: str) -> str:
+    def _count_text_for(self, key: str, path: str) -> tuple[str, str]:
         p = Path(path) if path else None
+        normal = '#888888'
+        red = '#ff5555'
         if key == 'excel_root':
             n = 0
             try:
@@ -317,7 +319,11 @@ class MainWindow:
                     )
             except Exception:
                 n = 0
-            return f'该目录将导出{n}张Excel表格'
+            if not p or not p.is_dir():
+                return '目录不存在或不可访问', red
+            if n == 0:
+                return '表格目录没有任何符合导出规范的表格。命名规则：.xlsx，文件名首字母需大写，不以 ~$ 开头', red
+            return (f'该目录将导出{n}张Excel表格', normal)
         elif key == 'output_project':
             n = 0
             try:
@@ -325,7 +331,16 @@ class MainWindow:
                     n = self._safe_count(f for f in p.rglob('*.json'))
             except Exception:
                 n = 0
-            return f'该目录包含{n}个Json文件'
+            if not p or not p.exists():
+                # 不强制要求存在，导出时会自动创建
+                return '该目录包含0个Json文件', normal
+            # 简单可写检查
+            try:
+                if not _is_writable_dir(str(p)):
+                    return '输出目录不可写', red
+            except Exception:
+                pass
+            return (f'该目录包含{n}个Json文件', normal)
         elif key in ('cs_output', 'enum_output'):
             n = 0
             try:
@@ -333,8 +348,51 @@ class MainWindow:
                     n = self._safe_count(f for f in p.rglob('*.cs'))
             except Exception:
                 n = 0
-            return f'该目录包含{n}个脚本'
-        return ''
+            # 必须位于 Unity 工程 Assets 子目录
+            if not self._is_under_assets(path):
+                return '该目录不在 Unity 工程的 Assets 子文件夹内，建议放在 Assets 下', red
+            return (f'该目录包含{n}个脚本', normal)
+        return ('', normal)
+
+    @staticmethod
+    def _is_under_assets(path: str) -> bool:
+        try:
+            if not path:
+                return False
+            parts = [s.lower() for s in Path(path).parts]
+            return 'assets' in parts
+        except Exception:
+            return False
+
+    def _strict_validate_for_export(self, cfg: dict) -> tuple[bool, str]:
+        """用于开始导表前的严格校验：
+        - Excel 目录必须存在且包含至少 1 个符合规范的 .xlsx
+        - cs_output 与 enum_output 必须位于 Unity 工程 Assets 子目录
+        - 同时复用基础校验（可写、可创建等）
+        """
+        # 基础校验
+        ok, msg = validate_config(cfg)
+        if not ok:
+            return False, msg
+        # Excel 下是否有符合规范的文件
+        try:
+            p = Path(cfg.get('excel_root', ''))
+            n = 0
+            if p.is_dir():
+                n = self._safe_count(
+                    f for f in p.rglob('*.xlsx')
+                    if f.name and f.name[0].isupper() and not f.name.startswith('~$')
+                )
+            if n <= 0:
+                return False, '表格目录没有任何符合导出规范的表格。命名规则：扩展名为 .xlsx，文件名首字母需大写，不以 ~$ 开头'
+        except Exception:
+            return False, 'Excel 根目录不可访问'
+        # Unity Assets 子目录检查
+        if not self._is_under_assets(cfg.get('cs_output', '')):
+            return False, '导出的脚本目录应位于 Unity 工程的 Assets 子目录下'
+        if not self._is_under_assets(cfg.get('enum_output', '')):
+            return False, '导出的枚举目录应位于 Unity 工程的 Assets 子目录下'
+        return True, ''
 
     def on_save(self):
         cfg = {
@@ -395,8 +453,14 @@ class MainWindow:
             'enum_output': self.vars['enum_output'].get().strip(),
             'auto_run': bool(self.vars['auto_run'].get()),
         }
-        ok, msg = validate_config(cfg)
+        # 严格校验：阻止非法配置导出，并给出提示（包含自动导表场景）
+        ok, msg = self._strict_validate_for_export(cfg)
         if not ok:
+            # 刷新标签颜色，标记错误
+            try:
+                self._refresh_counts()
+            except Exception:
+                pass
             messagebox.showerror('配置无效', msg)
             return
         # persist cfg
