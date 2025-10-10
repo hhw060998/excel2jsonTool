@@ -208,22 +208,33 @@ class WorksheetData:
         ws = self.worksheet
         # 隐藏行
         try:
-            hidden_rows = [idx for idx, dim in ws.row_dimensions.items() if getattr(dim, 'hidden', False)]
+            hidden_rows = [
+                idx for idx, dim in ws.row_dimensions.items()
+                if getattr(dim, 'hidden', False) or (hasattr(dim, 'height') and (dim.height == 0 or dim.height == 0.0))
+            ]
         except Exception:
             hidden_rows = []
         if hidden_rows:
             sample = hidden_rows[:10]
             more = '' if len(hidden_rows) <= 10 else f" 等共{len(hidden_rows)}行"
-            log_warn(f"[{self.name}] 检测到隐藏行: {sample}{more}。隐藏行可能导致导出结果与期望不一致")
+            _msg = f"[{self.name}] 检测到隐藏行: {sample}{more}。隐藏行可能导致导出结果与期望不一致"
+            log_warn(_msg, immediate=True)
+            # 同时加入最终汇总
+            log_warn(_msg, immediate=False)
         # 隐藏列（字母）
         try:
-            hidden_cols = [col for col, dim in ws.column_dimensions.items() if getattr(dim, 'hidden', False)]
+            hidden_cols = [
+                col for col, dim in ws.column_dimensions.items()
+                if getattr(dim, 'hidden', False) or (hasattr(dim, 'width') and (dim.width == 0 or dim.width == 0.0))
+            ]
         except Exception:
             hidden_cols = []
         if hidden_cols:
             sample = hidden_cols[:10]
             more = '' if len(hidden_cols) <= 10 else f" 等共{len(hidden_cols)}列"
-            log_warn(f"[{self.name}] 检测到隐藏列: {sample}{more}。隐藏列可能导致导出结果与期望不一致")
+            _msg = f"[{self.name}] 检测到隐藏列: {sample}{more}。隐藏列可能导致导出结果与期望不一致"
+            log_warn(_msg, immediate=True)
+            log_warn(_msg, immediate=False)
         # 合并单元格
         try:
             merged_ranges = [str(r) for r in getattr(ws, 'merged_cells', None).ranges] if getattr(ws, 'merged_cells', None) else []
@@ -232,7 +243,9 @@ class WorksheetData:
         if merged_ranges:
             sample = merged_ranges[:5]
             more = '' if len(merged_ranges) <= 5 else f" 等共{len(merged_ranges)}处"
-            log_warn(f"[{self.name}] 检测到合并单元格: {sample}{more}。合并区域可能导致读取表头或数据对齐异常，建议取消合并")
+            _msg = f"[{self.name}] 检测到合并单元格: {sample}{more}。合并区域可能导致读取表头或数据对齐异常，建议取消合并"
+            log_warn(_msg, immediate=True)
+            log_warn(_msg, immediate=False)
 
     def _check_interface_field_types(self):
         """
