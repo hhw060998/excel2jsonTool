@@ -18,3 +18,9 @@ Thumbs.db
 *.tmp
 *.part
 *.bak
+.env
+env/
+
+# PyInstaller spec files
+SheetEase.spec
+*.spec
