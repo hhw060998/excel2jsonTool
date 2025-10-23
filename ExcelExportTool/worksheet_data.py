@@ -265,18 +265,38 @@ class WorksheetData:
                         interface_path = alt
             except Exception:
                 pass
-        if not os.path.exists(interface_path):
-            return
-        with open(interface_path, encoding="utf-8") as f:
-            content = f.read()
+        # 若接口文件缺失，仍然对 id/name 使用内置期望（id:int, name:string）
+        interface_missing = not os.path.exists(interface_path)
+        content = ''
+        if not interface_missing:
+            with open(interface_path, encoding="utf-8") as f:
+                content = f.read()
         # 匹配如 int id { get; } 或 string name { get; }
         pattern = re.compile(r"(int|string|float|double|bool)\s+(\w+)\s*{[^{]*?get;[^{]*?}")
-        interface_fields = {m.group(2): m.group(1).lower() for m in pattern.finditer(content)}
+        interface_fields = {m.group(2): m.group(1).lower() for m in pattern.finditer(content)} if content else {}
         if not interface_fields:
-            return
+            # 没有在接口中解析到属性时，不中断；对 id/name 仍做内置期望检查
+            pass
         props = self._get_properties_dict()
+        # 1) 对 id/name 执行强制一致性检查（必须与接口或内置期望一致），不通过则直接中断
+        expected_id = (interface_fields.get('id') or 'int').lower()
+        expected_name = (interface_fields.get('name') or 'string').lower()
+        hard_errors: list[str] = []
+        actual_id = props.get('id')
+        if actual_id is not None and actual_id.lower() != expected_id:
+            hard_errors.append(f"id 字段类型为 {actual_id}，必须为 {expected_id}，因为id属性必须跟接口一致。如果要保留类型{actual_id}，建议修改字段名")
+        actual_name = props.get('name')
+        if actual_name is not None and actual_name.lower() != expected_name:
+            hard_errors.append(f"name 字段类型为 {actual_name}，必须为 {expected_name}，因为name属性必须跟接口一致。如果要保留类型{actual_name}，建议修改字段名")
+        if hard_errors:
+            detail = "\n".join(f"  - {x}" for x in hard_errors)
+            raise RuntimeError(f"表[{self.name}] 字段类型错误：\n{detail}")
+
+        # 2) 其他接口字段保持原有“提示并确认”的流程
         wrongs = []
         for fname, ftype in interface_fields.items():
+            if fname in ('id', 'name'):
+                continue  # 已做强制检查
             actual_type = props.get(fname)
             if actual_type is not None and actual_type.lower() != ftype:
                 wrongs.append((fname, actual_type, ftype))
@@ -284,7 +304,7 @@ class WorksheetData:
             msg = f"表[{self.name}] 字段类型警告：\n"
             for fname, actual, expect in wrongs:
                 msg += f"  - {fname} 字段类型为 {actual}，应为 {expect}\n"
-            msg += "这将导致生成的 C# 脚本无法通过编译。\n是否继续导出？(y/n)"
+            msg += "这可能导致生成的 C# 脚本无法通过编译。\n是否继续导出？(y/n)"
             if user_confirm(msg):
                 log_warn("用户选择继续导出")
             else:
