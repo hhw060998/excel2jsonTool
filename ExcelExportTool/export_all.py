@@ -83,12 +83,14 @@ def main():
     cfg: dict | None = None
 
     # 支持 --config/-c 使用 json 配置；若未提供 4 个位置参数则尝试加载默认 sheet_config.json
+    cfg_path_used: str | None = None
     if '--config' in argv or '-c' in argv:
         try:
             idx = argv.index('--config') if '--config' in argv else argv.index('-c')
             cfg_path = Path(argv[idx + 1]) if len(argv) > idx + 1 else Path('sheet_config.json')
             try:
                 cfg = json.loads(cfg_path.read_text(encoding='utf-8'))
+                cfg_path_used = str(cfg_path)
             except Exception:
                 # 配置不存在或读取失败 -> 启动 GUI 进行配置
                 print(f"未找到或无法读取配置: {cfg_path}. 将启动 GUI 进行配置...")
@@ -106,6 +108,7 @@ def main():
                     sys.exit(1)
                 try:
                     cfg = json.loads(root_cfg.read_text(encoding='utf-8'))
+                    cfg_path_used = str(root_cfg)
                     # 将仓库根配置同步到指定的 cfg_path，方便下次直接使用
                     try:
                         cfg_path.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding='utf-8')
@@ -158,6 +161,13 @@ def main():
     if not ok:
         print(f"配置无效：{msg}")
         sys.exit(1)
+    # 将当前配置透传给子流程（供资产校验读取）
+    try:
+        os.environ['SHEETEASE_CONFIG_JSON'] = json.dumps(cfg, ensure_ascii=False)
+        if cfg_path_used:
+            os.environ['SHEETEASE_CONFIG_PATH'] = cfg_path_used
+    except Exception:
+        pass
     # 若输出路径不在 Assets 下 -> 仅警告继续
     if not _contains_assets(cfg.get('output_project',''), cfg.get('cs_output',''), cfg.get('enum_output','')):
         print("[Warn] 输出路径未包含 'Assets'，这通常不是 Unity 工程的 Assets 子目录（将继续导表）")

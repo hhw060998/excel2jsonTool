@@ -204,8 +204,8 @@ class MainWindow:
         }
 
         # Layout root
-        # 仅让日志区域（第9行）随窗口高度变化，其余区域保持紧凑
-        master.grid_rowconfigure(9, weight=1)
+        # 仅让日志区域（最后的日志行）随窗口高度变化，其余区域保持紧凑
+        master.grid_rowconfigure(11, weight=1)
         master.grid_columnconfigure(1, weight=1)
 
         # 统计标签集合
@@ -221,9 +221,17 @@ class MainWindow:
         self._add_row(6, '枚举输出目录:', 'enum_output')
         self._add_count_label(7, 'enum_output')
 
+        # YooAsset 资产校验配置（可选）
+        yoo = (init_cfg or {}).get('yooasset', {}) if isinstance((init_cfg or {}).get('yooasset', {}), dict) else {}
+        self.vars['yooasset.collector_setting'] = tk.StringVar(value=yoo.get('collector_setting', ''))
+        self.vars['yooasset.strict'] = tk.BooleanVar(value=bool(yoo.get('strict', False)))
+        self._add_file_row(8, 'YooAsset CollectorSetting.asset:', 'yooasset.collector_setting')
+        # 严格模式勾选（失败即中断），建议先关闭，稳定后再开启
+        tk.Checkbutton(self.master, text='资产校验严格模式（失败中断）', variable=self.vars['yooasset.strict']).grid(row=9, column=0, columnspan=3, sticky='w', padx=6, pady=(0,6))
+
         # Buttons
         btn_frame = tk.Frame(master)
-        btn_frame.grid(row=8, column=0, columnspan=3, sticky='we', pady=(6, 6))
+        btn_frame.grid(row=10, column=0, columnspan=3, sticky='we', pady=(6, 6))
         self.btn_save = tk.Button(btn_frame, text='保存配置', command=self.on_save)
         self.btn_run = tk.Button(btn_frame, text='开始导出', command=self.on_run)
         self.btn_clear = tk.Button(btn_frame, text='清空日志', command=self.on_clear)
@@ -237,7 +245,7 @@ class MainWindow:
 
         # Log area
         self.log = scrolledtext.ScrolledText(master, wrap='word', height=18, bg='#000000', fg='#ffffff')
-        self.log.grid(row=9, column=0, columnspan=3, sticky='nsew', padx=6, pady=(0, 6))
+        self.log.grid(row=11, column=0, columnspan=3, sticky='nsew', padx=6, pady=(0, 6))
         # Configure ANSI color tags
         self.log.tag_config('ansi-normal', foreground='#ffffff')
         self.log.tag_config('ansi-red', foreground='#ff5555')
@@ -277,6 +285,18 @@ class MainWindow:
             self.vars[key].trace_add('write', lambda *_, k=key: self._refresh_count_for(k))
         except Exception:
             pass
+
+    def _add_file_row(self, row: int, label: str, key: str):
+        tk.Label(self.master, text=label).grid(row=row, column=0, sticky='w', padx=6, pady=6)
+        e = tk.Entry(self.master, textvariable=self.vars[key])
+        e.grid(row=row, column=1, sticky='we', padx=6, pady=6)
+        def browse_file():
+            cur = self.vars[key].get()
+            initd = os.path.dirname(cur) if os.path.isfile(cur) else (cur if os.path.isdir(cur) else str(APP_DIR))
+            p = filedialog.askopenfilename(initialdir=initd, filetypes=[('Unity Asset','*.asset'), ('All Files','*.*')])
+            if p:
+                self.vars[key].set(p)
+        tk.Button(self.master, text='选择文件', command=browse_file).grid(row=row, column=2, padx=6, pady=6)
 
     def _add_count_label(self, row: int, key: str):
         lbl = tk.Label(self.master, text='', anchor='w', fg='#888888')
@@ -408,6 +428,10 @@ class MainWindow:
             'cs_output': self.vars['cs_output'].get().strip(),
             'enum_output': self.vars['enum_output'].get().strip(),
             'auto_run': bool(self.vars['auto_run'].get()),
+            'yooasset': {
+                'collector_setting': self.vars['yooasset.collector_setting'].get().strip(),
+                'strict': bool(self.vars['yooasset.strict'].get()),
+            }
         }
         ok, msg = validate_config(cfg)
         if not ok:
@@ -436,6 +460,10 @@ class MainWindow:
                     'cs_output': self.vars['cs_output'].get().strip(),
                     'enum_output': self.vars['enum_output'].get().strip(),
                     'auto_run': bool(self.vars['auto_run'].get()),
+                    'yooasset': {
+                        'collector_setting': self.vars['yooasset.collector_setting'].get().strip(),
+                        'strict': bool(self.vars['yooasset.strict'].get()),
+                    }
                 }
                 # 关闭时的保存不强校验，静默失败即可
                 try:
@@ -459,6 +487,10 @@ class MainWindow:
             'cs_output': self.vars['cs_output'].get().strip(),
             'enum_output': self.vars['enum_output'].get().strip(),
             'auto_run': bool(self.vars['auto_run'].get()),
+            'yooasset': {
+                'collector_setting': self.vars['yooasset.collector_setting'].get().strip(),
+                'strict': bool(self.vars['yooasset.strict'].get()),
+            }
         }
         # 严格校验：阻止非法配置导出，并给出提示（包含自动导表场景）
         ok, msg = self._strict_validate_for_export(cfg)
@@ -492,6 +524,11 @@ class MainWindow:
             try:
                 # GUI 模式 -> 弹窗确认
                 os.environ['SHEETEASE_GUI'] = '1'
+                # 透传本次运行配置（供资产校验读取）
+                try:
+                    os.environ['SHEETEASE_CONFIG_JSON'] = json.dumps(cfg, ensure_ascii=False)
+                except Exception:
+                    pass
                 bexport = _import_batch_excel_to_json()
                 # Redirect stdout/stderr into GUI log
                 with contextlib.redirect_stdout(self.logger), contextlib.redirect_stderr(self.logger):

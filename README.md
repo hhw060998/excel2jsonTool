@@ -61,6 +61,33 @@ ProjectFolder/          # C# 工程与导出示例
 
 ---
 
+## 资源字段校验（YooAsset 集成）
+
+当使用 YooAsset 管理资源时，可以在导表阶段校验“表格中填写的资源文件名是否被收集”，以提前发现配置错误。
+
+- 在表头用前缀标记资源字段：
+  - `[Asset]Icon` 表示该字段填写的是“资源文件名（无扩展名）”，例如 `UI_OK`
+  - `[Asset:png]Icon` 表示仅允许 `png` 扩展名（扩展名大小写忽略；文件名大小写必须严格匹配）
+- 在 GUI 中配置：
+  - `YooAsset CollectorSetting.asset`：指向 Unity 项目中的 `AssetBundleCollectorSetting.asset`
+  - “资产校验严格模式（失败中断）”：开启后，未命中即中断导表；关闭时仅输出警告
+- 校验规则：
+  - 工具会解析 `CollectorSetting.asset` 中的所有 `CollectPath: Assets/...` 作为收集根目录
+  - 在这些目录下递归检索文件名（不含扩展名）是否存在；`[Asset:ext]` 还会比对扩展名
+  - 仅判断是否落在“收集根”内，不解析 YooAsset 的过滤/打包规则
+- 兼容 CLI：
+  - CLI 使用 `--config` 或默认 `sheet_config.json` 运行时，会自动把当前配置传给校验器；无需额外参数
+
+示例：
+
+表头写法：`[Asset:png]Icon`
+
+单元格：`UI_OK`
+
+若在任意收集根下未找到 `UI_OK.png` 则输出警告（或在严格模式下中断）。
+
+---
+
 ## 常见问题（FAQ）
 
 - **Q: 新增自定义类型需要改 Python 吗？**

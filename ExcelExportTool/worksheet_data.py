@@ -33,6 +33,170 @@ from .naming_config import (
 # 新增：可选字段统计开关（保持功能不变，默认打印一次汇总；若不需要可改为 False）
 _PRINT_FIELD_SUMMARY = True
 
+# 资产校验：全局缓存（同一次导表仅解析与索引一次）
+_ASSET_VALIDATOR = None  # type: ignore
+_ASSET_VALIDATOR_KEY: Optional[Tuple[str, bool]] = None  # (collector_setting_path, strict)
+
+class _AssetEntry:
+    __slots__ = ("base", "ext", "path", "root")
+    def __init__(self, base: str, ext: str, path: str, root: str) -> None:
+        # base：不含扩展名，保留实际大小写
+        # ext：不带点的小写（如 'png','prefab'）
+        self.base = base
+        self.ext = ext
+        self.path = path
+        self.root = root
+
+class AssetValidator:
+    def __init__(self, collector_setting: str, strict: bool = False) -> None:
+        self.collector_setting = collector_setting
+        self.strict = bool(strict)
+        self.project_root = self._infer_project_root(collector_setting)
+        self.roots = self._parse_collect_paths(collector_setting)
+        self._index: Dict[str, List[_AssetEntry]] = {}
+        if self.project_root and self.roots:
+            self._build_index()
+
+    def _infer_project_root(self, collector_setting: str) -> str:
+        try:
+            p = os.path.abspath(collector_setting).replace("\\", "/")
+            parts = p.split("/")
+            if "Assets" in parts:
+                idx = parts.index("Assets")
+                root = "/".join(parts[:idx])
+                return root if root else "/"
+        except Exception:
+            pass
+        return ""
+
+    def _parse_collect_paths(self, collector_setting: str) -> List[str]:
+        paths: List[str] = []
+        try:
+            with open(collector_setting, "r", encoding="utf-8") as f:
+                for line in f:
+                    # 匹配形如：  - CollectPath: Assets/...
+                    m = re.search(r"CollectPath:\s*(Assets/[^\r\n]+)", line)
+                    if m:
+                        path = m.group(1).strip()
+                        # 统一去除尾部斜杠
+                        if path.endswith("/"):
+                            path = path[:-1]
+                        if path not in paths:
+                            paths.append(path)
+        except Exception:
+            return []
+        return paths
+
+    def _build_index(self) -> None:
+        proj = self.project_root
+        idx: Dict[str, List[_AssetEntry]] = {}
+        for root in self.roots:
+            abs_root = os.path.join(proj, root.replace("/", os.sep))
+            if not os.path.isdir(abs_root):
+                continue
+            for dirpath, _dirnames, filenames in os.walk(abs_root):
+                for fn in filenames:
+                    if fn.endswith(".meta"):
+                        continue
+                    base, ext = os.path.splitext(fn)
+                    ext = (ext[1:].lower() if ext else "")  # 去掉点
+                    entry = _AssetEntry(base=base, ext=ext, path=os.path.join(dirpath, fn), root=root)
+                    key = base.lower()
+                    idx.setdefault(key, []).append(entry)
+        self._index = idx
+
+    def exists_base_name(self, base_name: str, required_ext: Optional[str]) -> bool:
+        if not self._index:
+            return False
+        key = base_name.lower().strip()
+        cand = self._index.get(key, [])
+        if not cand:
+            return False
+        # 文件名严格大小写匹配；扩展名忽略大小写
+        if required_ext:
+            req = required_ext.strip().lstrip(".").lower()
+            return any(e.base == base_name and e.ext == req for e in cand)
+        else:
+            return any(e.base == base_name for e in cand)
+
+
+def _load_sheet_config_for_assets() -> Optional[Dict[str, Any]]:
+    """按优先级加载配置：
+    1) 环境变量 SHEETEASE_CONFIG_JSON（直接提供JSON字符串）
+    2) 环境变量 SHEETEASE_CONFIG_PATH（指定配置文件路径）
+    3) 候选路径：CWD/sheet_config.json 与 仓库根/sheet_config.json
+    """
+    # 1) 直接从环境变量读取 JSON 字符串
+    try:
+        env_json = os.environ.get('SHEETEASE_CONFIG_JSON')
+        if env_json:
+            return json.loads(env_json)
+    except Exception:
+        pass
+    # 2) 指定路径
+    try:
+        env_path = os.environ.get('SHEETEASE_CONFIG_PATH')
+        if env_path and os.path.isfile(env_path):
+            with open(env_path, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception:
+        pass
+    # 3) 常规候选
+    candidates = []
+    try:
+        candidates.append(os.path.join(os.getcwd(), "sheet_config.json"))
+    except Exception:
+        pass
+    try:
+        candidates.append(os.path.join(os.path.dirname(os.path.dirname(__file__)), "sheet_config.json"))
+    except Exception:
+        pass
+    for p in candidates:
+        try:
+            if os.path.isfile(p):
+                with open(p, "r", encoding="utf-8") as f:
+                    return json.load(f)
+        except Exception:
+            continue
+    return None
+
+
+def _get_asset_validator() -> Optional[AssetValidator]:
+    """按当前配置返回（并必要时重建）资产校验器。
+    若切换了 collector 路径或 strict 选项，会自动丢弃旧缓存并重建，避免 GUI 多次运行时使用旧配置。
+    """
+    global _ASSET_VALIDATOR, _ASSET_VALIDATOR_KEY
+    cfg = _load_sheet_config_for_assets()
+    if not cfg:
+        _ASSET_VALIDATOR = None
+        _ASSET_VALIDATOR_KEY = None
+        return None
+    yoo = cfg.get("yooasset") or {}
+    collector = yoo.get("collector_setting")
+    strict = bool(yoo.get("strict", False))
+    # 当 collector 不存在时直接返回 None（并清空缓存）
+    if not collector or not os.path.isfile(collector):
+        _ASSET_VALIDATOR = None
+        _ASSET_VALIDATOR_KEY = None
+        return None
+    key = (os.path.abspath(collector), strict)
+    if _ASSET_VALIDATOR is not None and _ASSET_VALIDATOR_KEY == key:
+        return _ASSET_VALIDATOR
+    # 重建
+    try:
+        validator = AssetValidator(collector, strict=strict)
+        if not validator.roots:
+            _ASSET_VALIDATOR = None
+            _ASSET_VALIDATOR_KEY = None
+            return None
+        _ASSET_VALIDATOR = validator
+        _ASSET_VALIDATOR_KEY = key
+        return _ASSET_VALIDATOR
+    except Exception:
+        _ASSET_VALIDATOR = None
+        _ASSET_VALIDATOR_KEY = None
+        return None
+
 
 def user_confirm(msg: str, title: str = "用户确认") -> bool:
     """
@@ -77,7 +241,10 @@ class WorksheetData:
     KEY1_PREFIX_RE = re.compile(r"^\s*key1\s*:\s*(?P<name>.+)\s*$", re.IGNORECASE)
     KEY2_PREFIX_RE = re.compile(r"^\s*key2\s*:\s*(?P<name>.+)\s*$", re.IGNORECASE)
     # [Sheet/Field]FieldName 或 [Sheet]FieldName（省略 Field -> 默认 id）
-    REF_PREFIX_RE = re.compile(r"^\s*\[(?P<sheet>[^/\]]+)(?:/(?P<field>[^\]]+))?\]\s*(?P<name>.+)$")
+    # 引用标记：[Sheet/Field]FieldName（Sheet 名不允许包含 ':'，避免与 [Asset:ext] 混淆）
+    REF_PREFIX_RE = re.compile(r"^\s*\[(?P<sheet>[^:/\]]+)(?:/(?P<field>[^\]]+))?\]\s*(?P<name>.+)$")
+    # [Asset]FieldName 或 [Asset:png]FieldName —— 资源文件校验标记（文件名不含扩展名，严格大小写匹配文件名，扩展名忽略大小写）
+    ASSET_PREFIX_RE = re.compile(r"^\s*\[(?:asset)(?::(?P<ext>[A-Za-z0-9_]+))?\]\s*(?P<name>.+)$", re.IGNORECASE)
 
     def __init__(self, worksheet) -> None:
         self.name: str = worksheet.title
@@ -157,6 +324,8 @@ class WorksheetData:
 
         # 解析字段上的引用前缀 [Sheet/Field]
         self._ref_specs: Dict[int, Tuple[str, Optional[str]]] = {}
+        # 解析字段上的资源前缀 [Asset] 或 [Asset:ext]
+        self._asset_specs: Dict[int, Optional[str]] = {}
         for i, raw_field_name in enumerate(self.field_names):
             if i == 0:
                 continue
@@ -164,6 +333,13 @@ class WorksheetData:
                 continue
             if not isinstance(raw_field_name, str):
                 continue
+            # 先解析资源标记 —— 命中后不再作为引用处理，避免混淆
+            am = self.ASSET_PREFIX_RE.match(raw_field_name)
+            if am:
+                ext = am.group("ext")
+                self._asset_specs[i] = (ext.strip().lower() if isinstance(ext, str) and ext.strip() else None)
+                continue
+            # 再解析引用标记
             m = self.REF_PREFIX_RE.match(raw_field_name)
             if m:
                 sheet = m.group("sheet").strip()
@@ -389,6 +565,10 @@ class WorksheetData:
         m2 = self.KEY2_PREFIX_RE.match(raw)
         if m2:
             return m2.group("name").strip()
+        # 去掉资源前缀 [Asset] / [Asset:ext]
+        m_asset = self.ASSET_PREFIX_RE.match(raw)
+        if m_asset:
+            return m_asset.group("name").strip()
         # 去掉引用前缀 [Sheet/Field]
         m3 = self.REF_PREFIX_RE.match(raw)
         if m3:
@@ -649,6 +829,39 @@ class WorksheetData:
                         log_error(f"{self.name} 行{excel_row} 字段 {data_name} 转换失败 原值[{_short(cell_value)}]: {e}")
                         value = None
                 row_obj[data_name] = value
+
+                # 资源字段校验：[Asset] 或 [Asset:ext]，值为无扩展名文件名；严格大小写匹配文件名，扩展名忽略大小写
+                if col_index in getattr(self, "_asset_specs", {}):
+                    # 仅对 string 或 list(string) 做校验；其他类型跳过
+                    try:
+                        _kind, _base = self._parse_type_annotation(type_str)
+                    except Exception:
+                        _kind, _base = ("scalar", None)
+                    required_ext = self._asset_specs.get(col_index)
+                    validator = _get_asset_validator()
+                    if validator is None:
+                        # 未配置或解析失败：提示一次全局警告后跳过（每字段每行不重复提示）
+                        if not hasattr(self, "_asset_validator_missing_warned"):
+                            log_warn(f"[{self.name}] 未配置 YooAsset 收集设置或解析失败，已跳过 [Asset] 字段校验。请在 sheet_config.json 配置 yooasset.collector_setting")
+                            setattr(self, "_asset_validator_missing_warned", True)
+                    else:
+                        def _check_one_filename(fname: Any):
+                            if not isinstance(fname, str) or not fname.strip():
+                                return
+                            ok = validator.exists_base_name(fname.strip(), required_ext)
+                            if not ok:
+                                msg = f"[{self.name}] 行{excel_row} 字段 {data_name} 标记为[Asset{(':'+required_ext) if required_ext else ''}]，在任一收集路径下未找到文件名为 '{fname}' 的资源"
+                                if validator.strict:
+                                    # 严格模式：直接报错中断
+                                    raise RuntimeError(msg)
+                                else:
+                                    log_warn(msg)
+
+                        if _kind == "list" and isinstance(value, list):
+                            for ele in value:
+                                _check_one_filename(ele)
+                        else:
+                            _check_one_filename(value)
 
                 # 收集引用检查
                 if col_index in self._ref_specs:
